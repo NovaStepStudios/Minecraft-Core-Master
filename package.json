@@ -1,0 +1,43 @@
+{
+  "name": "minecraft-core-master",
+  "version": "1.0.0",
+  "description": "Un módulo que permite la descarga y la ejecución de minecraft java con node.js",
+  "keywords": [
+    "minecraft-launcher-core",
+    "minecraft-java-core",
+    "minecraft-launcher",
+    "minecraft-node",
+    "minecraft-core",
+    "javascript",
+    "minecraft",
+    "neoforge",
+    "optifine",
+    "nodejs",
+    "fabric",
+    "forge",
+    "node"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "NovaStep Studios",
+  "main": "components/DownloadMc.js",
+  "license": "MIT",
+  "files": [
+    "src/",
+    "LICENSE.md",
+    "README.md"
+  ],
+  "icon": "icon.png",
+  "readme": "README.md",
+  "dependencies": {
+    "minecraft-launcher-core": "^3.18.2",
+    "node-fetch": "^3.3.2",
+    "tar": "^7.4.3",
+    "unzipper": "^0.12.3"
+  },
+  "devDependencies": {
+    "adm-zip": "^0.5.16",
+    "node-fecth": "^0.0.1-security"
+  }
+}
