@@ -20,7 +20,7 @@ El paquete está diseñado para usarse dentro de aplicaciones Node.js, especialm
 
 ```js
 const path = require("path");
-const Minecraft-Core-Master = require("minecraft-core-master"); // nombre hipotético del paquete
+const Minecraft-Core-Master = require("minecraft-core-master");
 
 // Directorio donde se descargará Minecraft
 const downloadPath = path.join(__dirname, "minecraft");
