@@ -42,7 +42,7 @@ downloader.on("done", (msg) => {
 });
 
 // Descargar la versión más reciente tipo release, pero puede contraer problemas.
-estamos solucionando eso por el momento especifique la version que quiera descargar en #Descargar una versión específica (ejemplo: 1.19.3)#
+// estamos solucionando eso por el momento especifique la version que quiera descargar en #Descargar una versión específica (ejemplo: 1.19.3)#
 downloader.download();
 ```
 # Parametros
