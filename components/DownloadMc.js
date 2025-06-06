@@ -177,7 +177,7 @@ class MinecraftDownloader extends EventEmitter {
   async downloadJava() {
     this.emit("progress", "Verificando JVM...");
 
-    const javaVersion = "Java17";
+    const javaVersion = "Java21";
     const url = this.config?.JVMDownload?.[javaVersion]?.[this.osName];
     if (!url) {
       throw new Error(`No hay URL de Java ${javaVersion} para ${this.osName}`);
@@ -211,14 +211,97 @@ class MinecraftDownloader extends EventEmitter {
   }
 
   async fetchManifestData(versionId) {
-    // Busca la versión en el manifiesto global
-    const manifest = await fetch(ManifestURL).then((r) => r.json());
-    const version = manifest.versions.find((v) => v.id === versionId);
-    if (!version) throw new Error(`Versión ${versionId} no encontrada`);
+    const cacheDir = path.join(this.rootPath, "cache", "json");
+    const manifestPath = path.join(cacheDir, "manifest_v2.json");
 
-    // Obtiene datos específicos de la versión
-    const versionData = await fetch(version.url).then((r) => r.json());
-    return versionData;
+    // Asegurar que la URL del manifest exista
+    const manifestURL =
+      this.ManifestURL ||
+      "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+
+    // Crear carpeta si no existe
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+    }
+
+    // Descargar manifest_v2.json si no existe
+    if (!fs.existsSync(manifestPath)) {
+      this.emit("progress", "📥 Descargando manifest_v2.json...");
+
+      await new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(manifestPath);
+        https
+          .get(manifestURL, (res) => {
+            if (res.statusCode !== 200) {
+              return reject(
+                new Error(
+                  `❌ Error HTTP ${res.statusCode} al descargar el manifest`
+                )
+              );
+            }
+
+            res.pipe(file);
+            file.on("finish", () => {
+              file.close();
+              this.emit(
+                "progress",
+                "✅ manifest_v2.json guardado en cache/json"
+              );
+              resolve();
+            });
+          })
+          .on("error", (err) => {
+            if (fs.existsSync(manifestPath)) fs.unlinkSync(manifestPath);
+            reject(err);
+          });
+      });
+    }
+
+    // Leer y parsear el manifest
+    const manifestData = fs.readFileSync(manifestPath, "utf-8");
+    let manifest;
+    try {
+      manifest = JSON.parse(manifestData);
+    } catch (e) {
+      throw new Error("❌ No se pudo parsear manifest_v2.json");
+    }
+
+    // Buscar versión
+    const version = manifest.versions.find((v) => v.id === versionId);
+    if (!version) {
+      throw new Error(`❌ Versión ${versionId} no encontrada en el manifest`);
+    }
+
+    // Descargar y parsear el archivo de versión
+    return await new Promise((resolve, reject) => {
+      https
+        .get(version.url, (res) => {
+          if (res.statusCode !== 200) {
+            return reject(
+              new Error(
+                `❌ Error HTTP ${res.statusCode} al descargar ${versionId}.json`
+              )
+            );
+          }
+
+          let data = "";
+          res.on("data", (chunk) => (data += chunk));
+          res.on("end", () => {
+            try {
+              const versionJson = JSON.parse(data);
+              this.emit("progress", `✅ ${versionId}.json descargado`);
+              resolve(versionJson);
+            } catch (err) {
+              reject(
+                new Error("❌ Error al parsear el archivo de versión JSON")
+              );
+            }
+          });
+        })
+        .on("error", (err) => {
+          reject(err);
+        });
+    });
   }
 
   downloadFile(url, dest) {
@@ -308,15 +391,22 @@ class MinecraftDownloader extends EventEmitter {
         const zipStream = fs
           .createReadStream(nativeZipPath)
           .pipe(unzipper.Parse({ forceStream: true }));
+
         for await (const entry of zipStream) {
           if (!entry.path.includes("META-INF")) {
             const fullPath = path.join(nativesDir, entry.path);
             await fs.promises.mkdir(path.dirname(fullPath), {
               recursive: true,
             });
-            entry.pipe(fs.createWriteStream(fullPath));
+
+            await new Promise((resolve, reject) => {
+              const writeStream = fs.createWriteStream(fullPath);
+              entry.pipe(writeStream);
+              writeStream.on("finish", resolve);
+              writeStream.on("error", reject);
+            });
           } else {
-            entry.autodrain(); // Ignorar META-INF
+            entry.autodrain();
           }
         }
         this.emit("progress", `[Nativos] Extraído: ${lib.name}`);
@@ -388,20 +478,67 @@ class MinecraftDownloader extends EventEmitter {
 
   async downloadAssets(versionData) {
     const assetsFolder = path.join(this.rootPath, "assets");
+    const indexesFolder = path.join(assetsFolder, "indexes");
+
+    // Descargar y guardar el assetIndex JSON
     const assetIndexURL = versionData.assetIndex.url;
+    const assetIndexId = versionData.assetIndex.id;
+    const assetIndexPath = path.join(indexesFolder, `${versionData.id}.json`);
+
+    // Crear carpeta indexes si no existe
+    if (!fs.existsSync(indexesFolder)) {
+      fs.mkdirSync(indexesFolder, { recursive: true });
+    }
+
+    // Función que descarga JSON con https y devuelve objeto JS
+    function downloadJson(url) {
+      return new Promise((resolve, reject) => {
+        https
+          .get(url, (res) => {
+            if (res.statusCode !== 200) {
+              reject(new Error(`HTTP error ${res.statusCode}`));
+              return;
+            }
+            let data = "";
+            res.on("data", (chunk) => {
+              data += chunk;
+            });
+            res.on("end", () => {
+              try {
+                const json = JSON.parse(data);
+                resolve(json);
+              } catch (err) {
+                reject(err);
+              }
+            });
+          })
+          .on("error", reject);
+      });
+    }
 
     let assetIndexData;
     try {
-      assetIndexData = await fetch(assetIndexURL).then((res) => res.json());
+      assetIndexData = await downloadJson(assetIndexURL);
+
+      // Guardar el assetIndex JSON localmente
+      fs.writeFileSync(
+        assetIndexPath,
+        JSON.stringify(assetIndexData, null, 2),
+        "utf-8"
+      );
+      this.emit(
+        "progress",
+        `[Assets] assetIndex guardado en indexes/${assetIndexId}.json`
+      );
     } catch (error) {
       this.emit(
         "error",
-        `[Assets] Error al obtener el asset index: ${error.message}`
+        `[Assets] Error al obtener o guardar asset index: ${error.message}`
       );
       return;
     }
 
-    // Función interna para descargar archivos usando el hash
+    // Función para descargar archivos según hash (la tuya, que usa this.downloadFile)
     const downloadFromHashList = async (folder, hashList, label) => {
       for (const [name, data] of Object.entries(hashList)) {
         const hash = data.hash;
@@ -431,21 +568,9 @@ class MinecraftDownloader extends EventEmitter {
       }
     };
 
-    // Descargar distintos tipos de assets si existen
+    // Descargar solo assets (objects)
     if (assetIndexData.objects) {
       await downloadFromHashList("objects", assetIndexData.objects, "asset");
-    }
-
-    if (assetIndexData.indexes) {
-      await downloadFromHashList("indexes", assetIndexData.indexes, "index");
-    }
-
-    if (assetIndexData.skins) {
-      await downloadFromHashList("skins", assetIndexData.skins, "skin");
-    }
-
-    if (assetIndexData.logs) {
-      await downloadFromHashList("logs", assetIndexData.logs, "log");
     }
 
     this.emit("progress", "[Assets] ✅ Descarga de assets completada.");
