@@ -114,12 +114,12 @@ class MinecraftDownloader extends EventEmitter {
         versionId = version;
       }
 
-      this.emit("progress", "Creando estructura de carpetas...");
-      this.createFolders();
-
       if (this.downloadJavaEnabled) {
         await this.downloadJava();
       }
+
+      this.emit("progress", "Creando estructura de carpetas...");
+      await this.createFolders();
 
       this.emit("progress", `Iniciando descarga de Minecraft ${versionId}...`);
       const versionData = await this.fetchManifestData(versionId);
@@ -212,21 +212,25 @@ class MinecraftDownloader extends EventEmitter {
 
   async fetchManifestData(versionId) {
     const cacheDir = path.join(this.rootPath, "cache", "json");
-    const manifestPath = path.join(cacheDir, "manifest_v2.json");
+    const versionsDir = path.join(cacheDir, "versions");
+    const manifestPath = path.join(cacheDir, "version_manifest_v2.json");
+    const versionJsonPath = path.join(versionsDir, `${versionId}.json`);
 
-    // Asegurar que la URL del manifest exista
     const manifestURL =
       this.ManifestURL ||
       "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 
-    // Crear carpeta si no existe
+    // Crear carpetas si no existen
     if (!fs.existsSync(cacheDir)) {
       fs.mkdirSync(cacheDir, { recursive: true });
+    }
+    if (!fs.existsSync(versionsDir)) {
+      fs.mkdirSync(versionsDir, { recursive: true });
     }
 
     // Descargar manifest_v2.json si no existe
     if (!fs.existsSync(manifestPath)) {
-      this.emit("progress", "📥 Descargando manifest_v2.json...");
+      this.emit("progress", "Descargando manifest_v2.json...");
 
       await new Promise((resolve, reject) => {
         const file = fs.createWriteStream(manifestPath);
@@ -235,7 +239,7 @@ class MinecraftDownloader extends EventEmitter {
             if (res.statusCode !== 200) {
               return reject(
                 new Error(
-                  `❌ Error HTTP ${res.statusCode} al descargar el manifest`
+                  `Error HTTP ${res.statusCode} al descargar el manifest`
                 )
               );
             }
@@ -243,10 +247,7 @@ class MinecraftDownloader extends EventEmitter {
             res.pipe(file);
             file.on("finish", () => {
               file.close();
-              this.emit(
-                "progress",
-                "✅ manifest_v2.json guardado en cache/json"
-              );
+              this.emit("progress", "manifest_v2.json guardado en cache/json");
               resolve();
             });
           })
@@ -263,23 +264,39 @@ class MinecraftDownloader extends EventEmitter {
     try {
       manifest = JSON.parse(manifestData);
     } catch (e) {
-      throw new Error("❌ No se pudo parsear manifest_v2.json");
+      throw new Error("No se pudo parsear manifest_v2.json");
     }
 
     // Buscar versión
     const version = manifest.versions.find((v) => v.id === versionId);
     if (!version) {
-      throw new Error(`❌ Versión ${versionId} no encontrada en el manifest`);
+      throw new Error(`Versión ${versionId} no encontrada en el manifest`);
     }
 
-    // Descargar y parsear el archivo de versión
+    // Si el archivo de versión ya existe, leerlo y devolverlo
+    if (fs.existsSync(versionJsonPath)) {
+      this.emit("progress", `${versionId}.json cargado desde cache`);
+      const cachedData = fs.readFileSync(versionJsonPath, "utf-8");
+      try {
+        return JSON.parse(cachedData);
+      } catch (err) {
+        this.emit(
+          "progress",
+          `Error al parsear el archivo cacheado ${versionId}.json, se descargará de nuevo.`
+        );
+        // En caso de error al parsear, eliminar el archivo corrupto para descargarlo de nuevo
+        fs.unlinkSync(versionJsonPath);
+      }
+    }
+
+    // Descargar y guardar archivo de versión si no existe o estaba corrupto
     return await new Promise((resolve, reject) => {
       https
         .get(version.url, (res) => {
           if (res.statusCode !== 200) {
             return reject(
               new Error(
-                `❌ Error HTTP ${res.statusCode} al descargar ${versionId}.json`
+                `Error HTTP ${res.statusCode} al descargar ${versionId}.json`
               )
             );
           }
@@ -289,12 +306,14 @@ class MinecraftDownloader extends EventEmitter {
           res.on("end", () => {
             try {
               const versionJson = JSON.parse(data);
-              this.emit("progress", `✅ ${versionId}.json descargado`);
+
+              // Guardar en cache
+              fs.writeFileSync(versionJsonPath, data, "utf-8");
+
+              this.emit("progress", `${versionId}.json descargado y guardado`);
               resolve(versionJson);
             } catch (err) {
-              reject(
-                new Error("❌ Error al parsear el archivo de versión JSON")
-              );
+              reject(new Error("Error al parsear el archivo de versión JSON"));
             }
           });
         })
@@ -600,7 +619,7 @@ class MinecraftDownloader extends EventEmitter {
         this.emit("error", `Error al descargar client.jar: ${err.message}`);
       }
     } else {
-      this.emit("progress", `✔️ client.jar ya existe en: ${clientJarPath}`);
+      this.emit("progress", `client.jar ya existe en: ${clientJarPath}`);
     }
 
     // Guardar JSON de versión
