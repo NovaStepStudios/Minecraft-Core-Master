@@ -1,4 +1,4 @@
-<img src="icon.png" style="border-radius: 0.5rem; width: 15rem;">
+![npm](./icon.png)
 
 # Minecraft-Core-Master
 
@@ -13,27 +13,26 @@
 El paquete está diseñado para usarse dentro de aplicaciones Node.js, especialmente en entornos Electron, y utiliza eventos para comunicar el progreso y posibles errores, lo que facilita su integración en interfaces gráficas.
 
 **Creado por:** NovaStep Studios (empresa de desarrollo enfocada en mejorar la experiencia de usuario en aplicaciones Electron)
-
 ---
 
 # Ejemplo básico de uso
 
 ```js
 const path = require("path");
-const Minecraft-Core-Master = require("minecraft-core-master");
+const { MinecraftDownloader } = require("minecraft-core-master");
 
 // Directorio donde se descargará Minecraft
 const downloadPath = path.join(__dirname, "minecraft");
 
 // Crear instancia del downloader
-const downloader = new Minecraft-Core-Master(downloadPath, true, "release");
+const downloader = new MinecraftDownloader(downloadPath, true, "release");
 
 // Escuchar eventos para mostrar progreso y errores
 downloader.on("progress", (msg) => {
   console.log("[PROGRESO]", msg);
 });
 
-downper.on("error", (err) => {
+downloper.on("error", (err) => {
   console.error("[ERROR]", err);
 });
 
@@ -41,8 +40,7 @@ downloader.on("done", (msg) => {
   console.log("[COMPLETADO]", msg);
 });
 
-// Descargar la versión más reciente tipo release, pero puede contraer problemas.
-// estamos solucionando eso por el momento especifique la version que quiera descargar en #Descargar una versión específica (ejemplo: 1.19.3)#
+// Descargar la versión más reciente tipo release
 downloader.download();
 ```
 # Parametros
@@ -84,9 +82,9 @@ Puedes escuchar estos eventos usando `.on(event, callback)`:
 # Descargar una versión específica (ejemplo: 1.19.3)
 
 ```js
-const Minecraft-Core-Master = require("minecraft-core-master");
+const {MinecraftDownloader} = require("minecraft-core-master");
 
-const downloader = new Minecraft-Core-Master("./minecraft", false, "release");
+const downloader = new MinecraftDownloader("./minecraft", false, "release");
 
 downloader.on("progress", console.log);
 downloader.on("error", console.error);
