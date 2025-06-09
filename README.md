@@ -2,108 +2,131 @@
 
 # Minecraft-Core-Master
 
-**Minecraft-Core-Master** es una clase JavaScript que permite descargar versiones oficiales de Minecraft directamente desde los servidores oficiales de Mojang. Gestiona la descarga de:
+**Minecraft-Core-Master** es una clase JavaScript para descargar versiones oficiales de Minecraft directamente desde los servidores de Mojang. Gestiona la descarga de:
 
-* La versión específica de Minecraft (release o snapshot)
-* Las librerías necesarias
-* Los assets (recursos gráficos y sonidos)
-* Los archivos nativos necesarios para el sistema operativo actual (Windows, Linux)
-* La instalación opcional de Java (JVM)
+* La versión específica de Minecraft (release, snapshot, old\_beta, old\_alpha, etc.)
+* Librerías necesarias
+* Assets (recursos gráficos y sonidos)
+* Archivos nativos para el sistema operativo actual (Windows, Linux, macOS)
+* Instalación opcional de Java (JVM)
 
-El paquete está diseñado para usarse dentro de aplicaciones Node.js, especialmente en entornos Electron, y utiliza eventos para comunicar el progreso y posibles errores, lo que facilita su integración en interfaces gráficas.
+Está diseñado para usarse en entornos Node.js, especialmente con Electron, usando eventos para informar progreso y errores, facilitando su integración en interfaces gráficas.
 
-**Creado por:** NovaStep Studios (empresa de desarrollo enfocada en mejorar la experiencia de usuario en aplicaciones Electron)
+**Creado por:** NovaStep Studios — Desarrollo enfocado en mejorar la experiencia de usuario en apps Electron.
+
 ---
 
-# Ejemplo básico de uso
+## Ejemplo básico: Descargar Minecraft
 
 ```js
 const path = require("path");
 const { MinecraftDownloader } = require("minecraft-core-master");
 
-// Directorio donde se descargará Minecraft
 const downloadPath = path.join(__dirname, "minecraft");
-
-// Crear instancia del downloader
 const downloader = new MinecraftDownloader(downloadPath, true, "release");
 
-// Escuchar eventos para mostrar progreso y errores
-downloader.on("progress", (msg) => {
-  console.log("[PROGRESO]", msg);
-});
+downloader.on("progress", (msg) => console.log("[PROGRESO]", msg));
+downloader.on("error", (err) => console.error("[ERROR]", err));
+downloader.on("done", (msg) => console.log("[COMPLETADO]", msg));
 
-downloper.on("error", (err) => {
-  console.error("[ERROR]", err);
-});
-
-downloader.on("done", (msg) => {
-  console.log("[COMPLETADO]", msg);
-});
-
-// Descargar la versión más reciente tipo release
-downloader.download();
+downloader.download(); // Descarga la última versión release
 ```
-# Parametros
 
 ---
 
-### Parámetros de `new Minecraft-Core-Master(path, autoInstallJava, versionType)`
+## Parámetros de `new MinecraftDownloader(path, autoInstallJava, versionType)`
 
-| Parámetro         | Tipo      | Obligatorio | Descripción                                                                                                                                                         |
-| ----------------- | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`            | `string`  | ✅ Sí        | Ruta absoluta o relativa donde se instalarán los archivos de Minecraft. Ejemplo: `"./minecraft"`.                                                                   |
-| `autoInstallJava` | `boolean` | ✅ Sí        | Si es `true`, intentará instalar automáticamente una versión compatible de Java (JVM) si no existe. Si es `false`, se asume que el sistema ya tiene Java instalado. |
-| `versionType`     | `string`  | ✅ Sí        | Tipo de versión a descargar si no se especifica una con `.download()`. Puede ser: `"release"`, `"snapshot"`, `"old_beta"`, `"old_alpha"`, etc.                      |
-
----
-
-### Métodos disponibles
-
-#### `.download(version?: string)`
-
-* **`version`** *(opcional)*: Si se pasa, se descargará esa versión específica de Minecraft. Si se omite, se descargará la última versión del tipo indicado (por ejemplo, `"release"`).
-* Retorna: `Promise<void>` (puede ser escuchado con eventos para saber cuándo termina).
+| Parámetro         | Tipo      | Obligatorio | Descripción                                                                                   |
+| ----------------- | --------- | ----------- | --------------------------------------------------------------------------------------------- |
+| `path`            | `string`  | Sí          | Ruta absoluta o relativa para instalar Minecraft, e.g. `"./minecraft"`.                       |
+| `autoInstallJava` | `boolean` | Sí          | Si es `true`, instala automáticamente Java si no existe. Si `false`, se asume que Java está.  |
+| `versionType`     | `string`  | Sí          | Tipo de versión por defecto para `.download()`: `"release"`, `"snapshot"`, `"old_beta"`, etc. |
 
 ---
 
-### Eventos disponibles
+## Métodos
 
-Puedes escuchar estos eventos usando `.on(event, callback)`:
+### `.download(version?: string): Promise<void>`
 
-| Evento       | Parámetros | Descripción                                                                                 |
-| ------------ | ---------- | ------------------------------------------------------------------------------------------- |
-| `"progress"` | `string`   | Progreso actual del proceso, como descarga de librerías, assets, nativos, etc.              |
-| `"error"`    | `Error`    | Si ocurre un error durante cualquier parte de la descarga.                                  |
-| `"done"`     | `string`   | Se emite cuando se ha completado exitosamente la descarga de todos los archivos necesarios. |
-
+* `version` (opcional): versión específica para descargar. Si se omite, descarga la última del tipo configurado.
+* Devuelve una promesa que resuelve al terminar la descarga.
 
 ---
 
-# Descargar una versión específica (ejemplo: 1.19.3)
+## Eventos disponibles
+
+| Evento       | Parámetros | Descripción                                                 |
+| ------------ | ---------- | ----------------------------------------------------------- |
+| `"progress"` | `string`   | Estado actual del proceso: descarga de librerías, assets... |
+| `"error"`    | `Error`    | Error ocurrido durante la descarga                          |
+| `"done"`     | `string`   | Descarga completada exitosamente                            |
+
+---
+
+# Ejecutar Minecraft con `MinecraftEjecuting`
+
+Además de descargar, el paquete permite lanzar Minecraft con la clase `MinecraftEjecuting`.
+
+## Ejemplo básico para lanzar Minecraft
 
 ```js
-const {MinecraftDownloader} = require("minecraft-core-master");
+const { MinecraftEjecuting } = require("minecraft-core-master");
+const launcher = new MinecraftEjecuting();
 
-const downloader = new MinecraftDownloader("./minecraft", false, "release");
+const opts = {
+  root: "./Minecraft",
+  javaPath: "java",
+  memory: { max: "6G", min: "1G" },
+  window: { width: 854, height: 480, fullscreen: false },
+  version: { versionID: "1.9", type: "release" },
+  user: {
+    name: "xxx_MataAbuelitas3000_xxx",
+    skinPath: "./skin.png",
+    capaPath: "./cape.png",
+  },
+};
 
-downloader.on("progress", console.log);
-downloader.on("error", console.error);
-downloader.on("done", console.log);
+launcher.launch(opts);
 
-downloader.download("1.19.3");
+launcher.on("debug", (e) => console.log("[DEBUG]", e));
+launcher.on("data", (e) => console.log("[DATA]", e));
 ```
 
 ---
 
-# Descripción técnica resumida
+## Parámetros de configuración para `launch(opts)`
 
-* Usa el manifiesto oficial de Mojang para obtener la lista y detalles de versiones.
-* Descarga el client.jar, librerías, assets y nativos según la versión y OS.
-* Soporta Windows, macOS y Linux detectando automáticamente el sistema operativo.
-* Extrae archivos `.zip` y `.tar.gz` donde corresponda.
-* Implementa un sistema de eventos (`progress`, `error`, `done`) para manejar comunicación asíncrona.
-* Permite descargar Java (JVM) para garantizar la ejecución correcta del juego.
-* Configurable vía un archivo `config.json` para rutas y extras.
+| Propiedad  | Descripción                                  | Tipo                                                      | Obligatorio |
+| ---------- | -------------------------------------------- | --------------------------------------------------------- | ----------- |
+| `root`     | Ruta base de instalación de Minecraft        | `string`                                                  | Sí          |
+| `javaPath` | Ruta al ejecutable Java (java o javaw)       | `string`                                                  | Sí          |
+| `memory`   | Memoria mínima y máxima para JVM             | `{ min: string, max: string }`                            | No          |
+| `window`   | Configuración de ventana                     | `{ width: number, height: number, fullscreen: boolean }`  | No          |
+| `version`  | Versión y tipo de Minecraft a ejecutar       | `{ versionID: string, type: string }`                     | Sí          |
+| `user`     | Información opcional de usuario (skin, capa) | `{ name?: string, skinPath?: string, capaPath?: string }` | No          |
 
 ---
-#### Proximamente podra descargar neoforge, fabric, forge, optifine, clients/modloaders
+
+## Eventos de `MinecraftEjecuting`
+
+| Evento  | Parámetros | Descripción                        |
+| ------- | ---------- | ---------------------------------- |
+| `debug` | `string`   | Información detallada de ejecución |
+| `data`  | `string`   | Datos adicionales durante el juego |
+
+---
+
+# Resumen técnico
+
+* Obtiene versiones desde el manifiesto oficial de Mojang.
+* Descarga client.jar, librerías, assets y nativos según versión y OS.
+* Compatible con Windows, Linux y macOS, detectando el sistema automáticamente.
+* Extrae archivos comprimidos (.zip, .tar.gz).
+* Instala Java automáticamente si se configura.
+* Permite personalizar memoria, ventana, versión y usuario al lanzar.
+* Utiliza eventos para progreso, datos y errores.
+* Próximamente soporte para modloaders como Forge, NeoForge, Fabric y OptiFine.
+
+---
+
+#### NovaStep Studios — Innovando la experiencia Minecraft en Electron
