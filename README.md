@@ -81,8 +81,8 @@ const opts = {
   version: { versionID: "1.9", type: "release" },
   user: {
     name: "xxx_MataAbuelitas3000_xxx",
-    skinPath: "./skin.png",
-    capaPath: "./cape.png",
+    skinPath: "./skin.png", // ( EN TESTEO )
+    capaPath: "./cape.png", // ( EN TESTEO )
   },
 };
 
