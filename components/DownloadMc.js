@@ -502,7 +502,7 @@ class MinecraftDownloader extends EventEmitter {
     // Descargar y guardar el assetIndex JSON
     const assetIndexURL = versionData.assetIndex.url;
     const assetIndexId = versionData.assetIndex.id;
-    const assetIndexPath = path.join(indexesFolder, `${versionData.id}.json`);
+    const assetIndexPath = path.join(indexesFolder, `${assetIndexId}.json`);
 
     // Crear carpeta indexes si no existe
     if (!fs.existsSync(indexesFolder)) {
