@@ -14,6 +14,11 @@ Está diseñado para usarse en entornos Node.js, especialmente con Electron, usa
 
 **Creado por:** NovaStep Studios — Desarrollo enfocado en mejorar la experiencia de usuario en apps Electron.
 
+**Instalacion :** ``npm i minecraft-core-master``
+[Package](https://www.npmjs.com/package/minecraft-core-master)
+[Discord](https://discord.gg/YAqpTWQByM)
+
+
 ---
 
 ## Ejemplo básico: Descargar Minecraft
