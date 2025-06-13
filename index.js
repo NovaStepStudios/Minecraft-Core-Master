@@ -1,4 +1,6 @@
-const { MinecraftDownloader } = require("./components/DownloadMc.js");
-const { MinecraftLaunch } = require("./components/LaunchMc.js")
-
-module.exports = { MinecraftDownloader }
+const MinecraftDownloader = require("./components/DownloadMc");
+const MinecraftEjecuting = require("./components/LaunchMc");
+module.exports = {
+  MinecraftDownloader,
+  MinecraftEjecuting
+};

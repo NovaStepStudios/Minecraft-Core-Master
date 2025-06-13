@@ -182,32 +182,40 @@ class MinecraftEjecuting extends EventEmitter {
   }
 
   async _loadOrCreateUser(rootPath) {
-    const profileLauncher = path.resolve(rootPath, "usercache.json");
+    const profilesPath = path.resolve(rootPath, "launcher_profiles.json");
+
+    let profiles = [];
 
     try {
-      const rawData = await fsPromises.readFile(profileLauncher, "utf-8");
-      const userData = JSON.parse(rawData);
+      const rawData = await fsPromises.readFile(profilesPath, "utf-8");
+      profiles = JSON.parse(rawData);
+      if (!Array.isArray(profiles)) profiles = [];
+    } catch {
+      // Si no existe o no se puede leer, dejamos array vacío
+    }
 
-      if (userData.uuid && userData.accessToken) {
-        return {
-          type: "legacy",
-          name: userData.name || "Player",
-          uuid: userData.uuid,
-          accessToken: userData.accessToken,
-        };
-      }
-    } catch {}
+    // Buscar perfil legacy existente
+    const existingProfile = profiles.find(
+      (p) => p.type === "legacy" && p.uuid && p.accessToken
+    );
 
+    if (existingProfile) {
+      return existingProfile;
+    }
+
+    // Crear nuevo perfil
     const newUser = {
-      type: this.user.type || "multiplayer",
-      name: this.user.name || "player",
+      type: "legacy",
+      name: this.options.user?.name || "Player",
       uuid: crypto.randomUUID(),
       accessToken: crypto.randomBytes(32).toString("hex"),
     };
 
+    profiles.push(newUser);
+
     await fsPromises.writeFile(
-      profileLauncher,
-      JSON.stringify(newUser, null, 2),
+      profilesPath,
+      JSON.stringify(profiles, null, 2),
       "utf-8"
     );
 
@@ -338,4 +346,4 @@ class MinecraftEjecuting extends EventEmitter {
   }
 }
 
-module.exports = { MinecraftEjecuting };
+module.exports = MinecraftEjecuting;

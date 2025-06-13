@@ -1,15 +1,15 @@
 const { MinecraftDownloader } = require("../index");
 
-const Downloading = new MinecraftDownloader("./Minecraft", false, "release");
+const downloaderMC = new MinecraftDownloader("./Minecraft", false, "old_alpha");
 
-Downloading.on("progress", (message) => {
+downloaderMC.on("progress", (message) => {
   console.log(`[Progreso] ${message}`);
 });
 
-Downloading.on("error", (err) => {
+downloaderMC.on("error", (err) => {
   console.error(`Error crítico: ${err}`);
 });
 
-Downloading.download("1.12.2").then(() => {
+downloaderMC.download("1.8.9").then(() => {
   console.log("Descarga completada!");
 });

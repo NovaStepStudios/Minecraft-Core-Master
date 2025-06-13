@@ -1,5 +1,4 @@
-const { MinecraftEjecuting } = require("minecraft-core-master");
-const path = require('path');
+const { MinecraftEjecuting } = require("../index");
 const LaunchMC = new MinecraftEjecuting();
 
 let opts = {
@@ -15,11 +14,10 @@ let opts = {
     fullscreen: false, // Fullscreen true || false
   }, // Tamaño de la ventana ( Opcional )
   version: {
-    versionID: "1.9", // Version a ejecutar ( Si no ay version, tira error )
+    versionID: "1.8.9", // Version a ejecutar ( Si no ay version, tira error )
     type: "release", // Tipo de version [ forge - optifine - release - snapshot - neoforge - fabric ]
   },
   user: {
-    // type: "", // Multiplayer ( Default ) EN TESTEO
     name: "xxx_MataAbuelitas3000_xxx", // ( Opcional eligira automaticamente el nombre )
     skinPath: "./skin.png", // ( Opcional ) EN TESTEO
     capaPath: "./cape.png", // ( Opcional ) EN TESTEO

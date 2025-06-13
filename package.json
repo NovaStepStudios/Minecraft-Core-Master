@@ -1,7 +1,7 @@
 {
   "name": "minecraft-core-master",
-  "version": "2.1.2",
-  "description": "Minecraft-core-master allows you to download Minecraft and use it quickly and easily.",
+  "version": "2.2.6",
+  "description": "Minecraft-core-master is a powerful JavaScript library that allows you to easily download official Minecraft versions, including all necessary libraries, assets, and native files, directly from Mojang servers. Additionally, it supports launching Minecraft with customizable options such as memory allocation, window size, version selection, and user profiles, making it ideal for integrating Minecraft into Node.js and Electron applications.",
   "keywords": [
     "minecraft-launcher-core",
     "minecraft-java-core",
@@ -25,6 +25,8 @@
   "license": "MIT",
   "files": [
     "components/",
+    "index.js",
+    "icon.png",
     "LICENSE.md",
     "README.md"
   ],

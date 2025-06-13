@@ -177,7 +177,7 @@ class MinecraftDownloader extends EventEmitter {
   async downloadJava() {
     this.emit("progress", "Verificando JVM...");
 
-    const javaVersion = "Java21";
+    const javaVersion = "Java24";
     const url = this.config?.JVMDownload?.[javaVersion]?.[this.osName];
     if (!url) {
       throw new Error(`No hay URL de Java ${javaVersion} para ${this.osName}`);
@@ -635,6 +635,4 @@ class MinecraftDownloader extends EventEmitter {
   }
 }
 
-module.exports = {
-  MinecraftDownloader,
-};
+module.exports = MinecraftDownloader;
