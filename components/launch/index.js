@@ -1,4 +1,3 @@
-// src/MinecraftExecutor.js
 const { EventEmitter } = require("events");
 const { spawn, exec }  = require("child_process");
 const path             = require("path");
