@@ -1,0 +1,41 @@
+{
+  "version": "1.1",
+  "recursive": true,
+  "enableLogs": true,
+  "arch": "x64",
+  "downloadJVM": true,
+  "defaultRoot": ".minecraft",
+  "structure":{
+    "Folders": [
+        "assets",
+        "libraries",
+        "resourcepacks",
+        "runtime",
+        "versions",
+        "logs",
+        "cache",
+        "saves"
+      ],
+    "assets": ["objects", "indexes"],
+    "versionNative": "natives"
+  },
+  "ExtraLibreries":[
+    "https://libraries.minecraft.net/org/ow2/asm/asm-all/5.0.3/asm-all-5.0.3.jar",
+    "https://libraries.minecraft.net/io/netty/netty-all/4.0.15.Final/netty-all-4.0.15.Final.jar",
+    "https://libraries.minecraft.net/net/minecraft/launchwrapper/1.12/launchwrapper-1.12.jar",
+    "https://libraries.minecraft.net/lzma/lzma/0.0.1/lzma-0.0.1.jar",
+    "https://libraries.minecraft.net/net/sf/jopt-simple/jopt-simple/4.6/jopt-simple-4.6.jar"
+  ],
+  "JVMDownload":{
+    "Java24":{
+        "windows":"https://download.oracle.com/java/24/latest/jdk-24_windows-x64_bin.zip",
+        "macOs": "https://download.oracle.com/java/24/latest/jdk-24_macos-x64_bin.tar.gz",
+        "linux": "https://download.oracle.com/java/24/latest/jdk-24_linux-x64_bin.tar.gz"
+    },
+    "Java17":{
+        "windows": "https://download.oracle.com/java/17/archive/jdk-17.0.12_windows-x64_bin.zip",
+        "macOs": "https://download.oracle.com/java/17/archive/jdk-17.0.12_macos-x64_bin.tar.gz",
+        "linux": "https://download.oracle.com/java/17/archive/jdk-17.0.12_linux-x64_bin.tar.gz"
+    }
+  }
+}
