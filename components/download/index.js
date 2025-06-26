@@ -1,94 +1,178 @@
 const EventEmitter = require("events");
+const fs = require("fs");
+const path = require("path");
 
-// ⬇️ Estos tres exportan una FUNCIÓN que ya devuelve la instancia
-const AssetsDownloader     = require("./downloaders/assetsDownloader.js");
-const ClientDownloader     = require("./downloaders/clientDownloader.js");
-const LibrariesDownloader  = require("./downloaders/librariesDownloader.js");
-
-// ⬇️ Estos dos exportan directamente la clase
-const NativesDownloader    = require("./downloaders/nativesDownloader.js");
-const JVMDownloader        = require("./downloaders/jvmDownloader.js");
+const createAssetsDownloader    = require("./downloaders/assetsDownloader.js");
+const createClientDownloader    = require("./downloaders/clientDownloader.js");
+const createLibrariesDownloader = require("./downloaders/librariesDownloader.js");
+const createNativesDownloader   = require("./downloaders/nativesDownloader.js");
+const JVMDownloader             = require("./downloaders/jvmDownloader.js");
+const JavaRuntimeFinder         = require("./downloaders/jvmOficial.js");
 
 class MinecraftDownloader extends EventEmitter {
-  /**
-   * @param {string} rootPath   Carpeta raíz de Minecraft.
-   * @param {string} javaVer    Versión de Java (p.e. "Java24").
-   * @param {string} release    Tipo de release ("release", "snapshot", etc.).
-   */
-  constructor(rootPath, javaVer, release) {
+  constructor(rootPath, javaVer = "auto", releaseType = "release", currentDownloads = 5) {
     super();
-    this.rootPath   = rootPath;
-    this.javaVer    = javaVer;
-    this.release    = release;
+    this.rootPath = rootPath;
+    this.javaVer = javaVer;
+    this.releaseType = releaseType;
+    this.concurrent = currentDownloads;
 
-    /** Peso de cada fase (debe sumar 1.0) */
     this.weights = {
-      jvm    : 0.20,
-      libs   : 0.20,
+      jvm:     0.20,
       natives: 0.15,
-      assets : 0.20,
-      client : 0.25,
+      libs:    0.20,
+      assets:  0.20,
+      client:  0.25,
     };
 
-    // Pre-calcular acumulados para no repetir switch
     this.cumulative = {};
     let acc = 0;
-    for (const k of ["jvm","libs","natives","assets","client"]) {
-      this.cumulative[k] = acc;
-      acc += this.weights[k];
+    for (const key of Object.keys(this.weights)) {
+      this.cumulative[key] = acc;
+      acc += this.weights[key];
     }
+
+    this.errorLogDir = path.join(this.rootPath, "temp", "download");
+    if (!fs.existsSync(this.errorLogDir)) {
+      fs.mkdirSync(this.errorLogDir, { recursive: true });
+    }
+
+    this.lastProgress = null;
   }
 
-  /**
-   * Inicia la descarga completa.
-   * @param {string} version Versión de Minecraft (p.e. "1.20.4").
-   */
   async start(version) {
-    /** Convierte "45.6%" ➜ 45.6 */
-    const toNumber = (s) => parseFloat(String(s).replace("%","")) || 0;
+    const toNumber = (s) => parseFloat(String(s).replace("%", "")) || 0;
 
-    /** Retransmite progreso global */
     const globalProgress = (stage, localStr) => {
       const local = toNumber(localStr);
-      const global =
-        (this.cumulative[stage] + (local / 100) * this.weights[stage]) * 100;
-      this.emit("progress", `Descargando ${stage}… ${global.toFixed(1)}%`);
+      const global = (this.cumulative[stage] + (local / 100) * this.weights[stage]) * 100;
+      const msg = `Descargando ${stage}… ${global.toFixed(1)}%`;
+      if (msg !== this.lastProgress) {
+        this.lastProgress = msg;
+        this.emit("progress", msg);
+      }
+    };
+
+    const appendErrorLog = (msg) => {
+      const logPath = path.join(this.errorLogDir, `Errores durante descarga de ${version}.log`);
+      const time = new Date().toISOString();
+      const line = `[${time}] ${msg}\n`;
+      fs.appendFile(logPath, line, (err) => {
+        if (err) console.error("Error escribiendo log de descarga:", err);
+      });
+    };
+
+    const runDownloader = async (name, fn) => {
+      try {
+        const msg = `Iniciando descarga de ${name} ${version}`;
+        if (msg !== this.lastProgress) {
+          this.lastProgress = msg;
+          this.emit("progress", msg);
+        }
+        await fn();
+      } catch (err) {
+        const errorMsg = `Error en descarga de ${name}: ${err.message || err}`;
+        this.emit("error", errorMsg);
+        appendErrorLog(errorMsg);
+      }
     };
 
     try {
-      /**************** JVM ****************/
-      this.emit("progress", `Iniciando descarga de Java ${this.javaVer}`);
-      const jvm = new JVMDownloader(this.rootPath, this.javaVer);
-      jvm.on("progress", (p) => globalProgress("jvm", p));
-      await jvm.download();
+      let javaVersionToUse = this.javaVer;
+      let skipJvmDownloader = false;
 
-      /**************** Librerías ****************/
-      this.emit("progress", `Iniciando descarga de librerías ${version}`);
-      const libs = LibrariesDownloader(this.rootPath, version);   // ← función
-      libs.on("progress", (p) => globalProgress("libs", p));
-      await libs.start();
+      if (javaVersionToUse === "auto") {
+        const finder = new JavaRuntimeFinder(this.rootPath, version);
+        finder.on("progress", (msg) => this.emit("progress", `[JVM] ${msg}`));
+        finder.on("warn", (msg) => this.emit("warn", `[JVM] ${msg}`));
+        finder.on("error", (e) => {
+          const emsg = `[JVM Finder] ${e.message || e}`;
+          this.emit("error", emsg);
+          appendErrorLog(emsg);
+        });
 
-      /**************** Assets ****************/
-      this.emit("progress", `Iniciando descarga de assets ${version}`);
-      const assets = AssetsDownloader(this.rootPath, version);    // ← función
-      assets.on("progress", (p) => globalProgress("assets", p));
-      await assets.start();
+        await runDownloader("Java Runtime Finder", async () => {
+          await finder.getJavaRuntime();
+          await finder.download();
+        });
 
-      /**************** Cliente ****************/
-      this.emit("progress", `Iniciando descarga de cliente ${version}`);
-      const client = ClientDownloader(this.rootPath, version);    // ← función
-      client.on("progress", (p) => globalProgress("natives", p));
-      await client.start();
-      
-      /**************** Nativos ****************/
-      this.emit("progress", `Iniciando descarga de nativos ${version}`);
-      const natives = new NativesDownloader(this.rootPath, version);
-      natives.on("progress", (p) => globalProgress("client", p));
-      await natives.start();
-      
-      this.emit("progress", `Descarga completa de Minecraft ${version} (100%)`);
+        const info = finder.javaRuntimeInfo;
+        if (info) {
+          javaVersionToUse = info;
+          this.emit("progress", `Java ${info.version.name} instalado correctamente.`);
+          globalProgress("jvm", "100%");
+          skipJvmDownloader = true;
+        }
+      }
+
+      if (javaVersionToUse === false) {
+        skipJvmDownloader = true;
+        globalProgress("jvm", "100%");
+      }
+
+      if (!skipJvmDownloader && (typeof javaVersionToUse === "string" || javaVersionToUse?.files)) {
+        await runDownloader(`Java ${javaVersionToUse.version?.name || javaVersionToUse}`, async () => {
+          const jvm = new JVMDownloader(this.rootPath, javaVersionToUse);
+          jvm.on("progress", (p) => globalProgress("jvm", p));
+          jvm.on("error", (e) => {
+            const emsg = `[JVM Downloader] ${e.message || e}`;
+            this.emit("error", emsg);
+            appendErrorLog(emsg);
+          });
+          await jvm.download();
+        });
+      }
+
+      await runDownloader("nativos", async () => {
+        const natives = createNativesDownloader(this.rootPath, version, { concurrency: this.concurrent });
+        natives.on("progress", (p) => globalProgress("natives", p));
+        natives.on("error", (e) => {
+          const emsg = `[Natives Downloader] ${e.message || e}`;
+          this.emit("error", emsg);
+          appendErrorLog(emsg);
+        });
+        await natives.start();
+      });
+
+      await runDownloader("librerías", async () => {
+        const libs = createLibrariesDownloader(this.rootPath, version, { concurrency: this.concurrent });
+        libs.on("progress", (p) => globalProgress("libs", p));
+        libs.on("error", (e) => {
+          const emsg = `[Libraries Downloader] ${e.message || e}`;
+          this.emit("error", emsg);
+          appendErrorLog(emsg);
+        });
+        await libs.start();
+      });
+
+      await runDownloader("assets", async () => {
+        const assets = createAssetsDownloader(this.rootPath, version);
+        assets.on("progress", (p) => globalProgress("assets", p));
+        assets.on("error", (e) => {
+          const emsg = `[Assets Downloader] ${e.message || e}`;
+          this.emit("error", emsg);
+          appendErrorLog(emsg);
+        });
+        await assets.start();
+      });
+
+      await runDownloader("cliente", async () => {
+        const client = createClientDownloader(this.rootPath, version);
+        client.on("progress", (p) => globalProgress("client", p));
+        client.on("error", (e) => {
+          const emsg = `[Client Downloader] ${e.message || e}`;
+          this.emit("error", emsg);
+          appendErrorLog(emsg);
+        });
+        await client.start();
+      });
+
+      this.emit("progress", `Minecraft ${version} descargado (100%)`);
+      this.emit("done", `✅ Minecraft ${version} descargado correctamente.`);
     } catch (err) {
-      this.emit("error", err);
+      const errorMsg = `Error crítico inesperado: ${err.message || err}`;
+      this.emit("error", errorMsg);
+      appendErrorLog(errorMsg);
       throw err;
     }
   }

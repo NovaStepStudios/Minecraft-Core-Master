@@ -6,96 +6,103 @@ const EventEmitter = require("events");
 const unzipper = require("unzipper");
 
 class NativesDownloader extends EventEmitter {
-  constructor(rootPath, version) {
+  constructor(rootPath, version, { concurrency = 3 } = {}) {
     super();
-    this.rootPath   = rootPath;
-    this.version    = version;
-    this.platform   = this.#detectPlatform();      // windows | linux | osx | unknown
+    this.rootPath = rootPath;
+    this.version = version;
+    this.platform = this.#detectPlatform();
     this.nativesDir = path.join(rootPath, "natives", version);
-    this.totalBytes = 0;
-    this.doneBytes  = 0;
+    this.concurrent = concurrency;
+    this.totalBytes = 1; // default para evitar NaN
+    this.doneBytes = 0;
   }
-
   #detectPlatform() {
     const p = os.platform();
-    if (p === "win32")  return "windows";
-    if (p === "darwin") return "osx";
-    if (p === "linux")  return "linux";
-    return "unknown";
+    return p === "win32" ? "windows" :
+           p === "darwin" ? "osx" :
+           p === "linux"  ? "linux" : "unknown";
   }
-
   async start() {
     if (this.platform === "unknown") {
       this.emit("error", "Plataforma no reconocida para descargar nativos.");
       return;
     }
-
-    this.emit("progress", `0.0%`); 
-
     try {
       await fs.promises.mkdir(this.nativesDir, { recursive: true });
-
-      // 1. Obtener manifest general y versión concreta
-      const versionManifest = await this.#fetchJSON("https://launchermeta.mojang.com/mc/game/version_manifest.json");
-      const versionEntry = versionManifest.versions.find(v => v.id === this.version);
-      if (!versionEntry) throw new Error(`Versión ${this.version} no encontrada en manifest`);
-
-      // 2. Obtener JSON versión
-      const versionJson = await this.#fetchJSON(versionEntry.url);
-
-      // 3. Filtrar librerías nativas para plataforma
-      const nativeLibs = (versionJson.libraries || []).filter(lib => {
+      const manifest = await this.#fetchJSON("https://launchermeta.mojang.com/mc/game/version_manifest.json");
+      const entry = manifest.versions.find(v => v.id === this.version);
+      if (!entry) throw new Error(`Versión ${this.version} no encontrada.`);
+      const versionData = await this.#fetchJSON(entry.url);
+      const nativeLibs = (versionData.libraries || []).filter(lib => {
         if (!lib.name.includes(":natives-")) return false;
         if (!lib.downloads?.artifact?.url) return false;
         const rules = lib.rules || [];
-        if (rules.length === 0) return true; 
+        if (rules.length === 0) return true;
         return rules.some(r => r.action === "allow" && r.os?.name === this.platform);
       });
-
       if (nativeLibs.length === 0) {
-        this.emit("progress", `100.0%`);
-        this.emit("done",  "Sin nativos para esta plataforma");
+        this.emit("progress", "100.0%");
+        this.emit("done", "Sin nativos para esta plataforma.");
         return;
       }
-
-      // 4. Calcular bytes totales a descargar (solo archivos que no existan)
-      this.totalBytes = 0;
+      // Calcular totalBytes solo de lo necesario
+      let total = 0;
       for (const lib of nativeLibs) {
         const art = lib.downloads.artifact;
         const zipPath = path.join(this.nativesDir, path.basename(art.path));
-        let stat = null;
-        try { stat = await fs.promises.stat(zipPath); } catch {}
-        if (!stat || stat.size !== art.size) this.totalBytes += art.size || 0;
-      }
-      if (this.totalBytes === 0) this.totalBytes = 1; // evitar división por cero
-
-      // 5. Descargar y extraer secuencialmente (podés paralelizar si querés)
-      for (const lib of nativeLibs) {
-        const art = lib.downloads.artifact;
-        const zipPath = path.join(this.nativesDir, path.basename(art.path));
-
-        const needsDownload = !(await this.#fileExistsWithSize(zipPath, art.size));
-        if (needsDownload) {
-          this.emit("progress", `Descargando nativo: ${lib.name}`);
-          await this.#downloadFile(art.url, zipPath);
-        } else {
-          this.emit("progress", `Nativo ya descargado: ${lib.name}`);
+        try {
+          const stat = await fs.promises.stat(zipPath);
+          if (stat.size !== art.size) total += art.size || 0;
+        } catch {
+          total += art.size || 0;
         }
-
-        this.emit("progress", `Extrayendo nativo: ${lib.name}`);
-        await this.#extractFlat(zipPath, this.nativesDir);
-
-        // Opcional borrar zip para ahorrar espacio
-        // await fs.promises.unlink(zipPath).catch(() => {});
       }
-
-      this.emit("progress", `100.0%`);
-      this.emit("done",  "Nativos descargados y extraídos correctamente.");
+      this.totalBytes = total > 0 ? total : 1;
+      await this.#processDownloads(nativeLibs);
+      this.emit("progress", "100.0%");
+      this.emit("done", "✅ Nativos descargados y extraídos correctamente.");
     } catch (e) {
-      this.emit("error", e.message);
+      this.emit("error", `Error en NativesDownloader: ${e.message}`);
     }
   }
-
+  async #processDownloads(libs) {
+    const queue = [];
+    let active = 0;
+    let index = 0;
+    const runNext = () => {
+      if (index >= libs.length) return;
+      const lib = libs[index++];
+      const work = this.#handleLib(lib).catch(() => {});
+      queue.push(work);
+      active++;
+      work.finally(() => {
+        active--;
+        queue.splice(queue.indexOf(work), 1);
+        this.#emitProgress();
+        runNext();
+      });
+    };
+    for (let i = 0; i < this.concurrent && i < libs.length; i++) {
+      runNext();
+    }
+    // Esperar a que todos terminen
+    while (queue.length > 0 || active > 0) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+  async #handleLib(lib) {
+    const art = lib.downloads.artifact;
+    const zipPath = path.join(this.nativesDir, path.basename(art.path));
+    const needsDownload = !(await this.#fileExistsWithSize(zipPath, art.size));
+    if (needsDownload) {
+      await this.#downloadFile(art.url, zipPath, art.size);
+    }
+    await this.#extractFlat(zipPath, this.nativesDir);
+  }
+  #emitProgress() {
+    const percent = ((this.doneBytes / this.totalBytes) * 100).toFixed(1);
+    this.emit("progress", `${percent}%`);
+  }
   async #fileExistsWithSize(filePath, expectedSize) {
     try {
       const stat = await fs.promises.stat(filePath);
@@ -104,48 +111,38 @@ class NativesDownloader extends EventEmitter {
       return false;
     }
   }
-
   #fetchJSON(url) {
     return new Promise((resolve, reject) => {
       https.get(url, res => {
-        if (res.statusCode !== 200) {
-          return reject(new Error(`HTTP ${res.statusCode} al descargar JSON: ${url}`));
-        }
+        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} en ${url}`));
         let data = "";
         res.on("data", chunk => data += chunk);
         res.on("end", () => {
           try {
             resolve(JSON.parse(data));
           } catch (e) {
-            reject(new Error("Error parseando JSON: " + e.message));
+            reject(new Error(`JSON malformado: ${e.message}`));
           }
         });
-      }).on("error", err => reject(err));
+      }).on("error", reject);
     });
   }
-
-  #downloadFile(url, dest) {
+  #downloadFile(url, dest, expectedSize) {
     return new Promise((resolve, reject) => {
       const dir = path.dirname(dest);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
+      fs.mkdirSync(dir, { recursive: true });
       const file = fs.createWriteStream(dest);
-
       https.get(url, res => {
         if (res.statusCode !== 200) {
           file.close();
           if (fs.existsSync(dest)) fs.unlinkSync(dest);
           return reject(new Error(`HTTP ${res.statusCode} al descargar: ${url}`));
         }
-
         res.on("data", chunk => {
           this.doneBytes += chunk.length;
-          const pct = ((this.doneBytes / this.totalBytes) * 100).toFixed(1);
-          this.emit("progress", `${pct}%`);
+          this.#emitProgress();
         });
-
         res.pipe(file);
-
         file.on("finish", () => file.close(resolve));
         file.on("error", err => {
           if (fs.existsSync(dest)) fs.unlinkSync(dest);
@@ -157,23 +154,17 @@ class NativesDownloader extends EventEmitter {
       });
     });
   }
-
   async #extractFlat(zipPath, destDir) {
     const zip = fs.createReadStream(zipPath).pipe(unzipper.Parse({ forceStream: true }));
-
     for await (const entry of zip) {
-      // Ignorar directorios y META-INF
       if (entry.type === "Directory" || entry.path.includes("META-INF")) {
         entry.autodrain();
         continue;
       }
       const fileName = path.basename(entry.path);
       const outPath = path.join(destDir, fileName);
-
-      // Sobrescribir siempre (podés añadir checks si querés)
       await fs.promises.writeFile(outPath, await entry.buffer());
     }
   }
 }
-
-module.exports = NativesDownloader;
+module.exports = (rootPath, version, opts) => new NativesDownloader(rootPath, version, opts);

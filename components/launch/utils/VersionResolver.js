@@ -2,10 +2,6 @@ const path = require("path");
 const fs = require("fs/promises");
 
 class VersionResolver {
-  /**
-   * @param {string} root Ruta raíz del Minecraft
-   * @param {Object} version Objeto con al menos { versionID }
-   */
   constructor(root, version) {
     if (!root) throw new Error("Parámetro 'root' requerido.");
     if (!version?.versionID) throw new Error("Parámetro 'version.versionID' requerido.");
@@ -16,9 +12,6 @@ class VersionResolver {
     this.jsonPath = path.join(this.root, "versions", this.versionID, `${this.versionID}.json`);
   }
 
-  /**
-   * Verifica que el archivo JSON de la versión esté presente.
-   */
   async ensurePresent() {
     try {
       await fs.access(this.jsonPath);
@@ -27,9 +20,6 @@ class VersionResolver {
     }
   }
 
-  /**
-   * Devuelve el contenido del archivo JSON de versión.
-   */
   async getData() {
     try {
       const raw = await fs.readFile(this.jsonPath, "utf-8");
@@ -39,9 +29,6 @@ class VersionResolver {
     }
   }
 
-  /**
-   * Devuelve la ruta al archivo JSON de la versión.
-   */
   getJsonPath() {
     return this.jsonPath;
   }

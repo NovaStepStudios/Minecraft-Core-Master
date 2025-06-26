@@ -1,34 +1,24 @@
-const { MinecraftExecutor } = require('../index.js');
+const { MinecraftExecutor } = require("../index");
 
-const launcher = new MinecraftExecutor();
+(async () => {
+  const executor = new MinecraftExecutor();
 
-let opts ={
-  root: "./Minecraft",
-  javaPath: "./runtime/Java24/bin/java",
-  memory: { max: "4G", min: "1G" },
-  window: { width: 854, height: 480, fullscreen: false },
-  version: { versionID: "1.21.6-56.0.7",type: "release" },
-  user: {
-    name: "Player",
-    uuid: "12345678-1234-1234-1234-123456789012",
-    accessToken: "your-access-token",
-    type: "mojang"
-  },
-}
-launcher.start(opts).then(() => {
-  console.log("Minecraft está ejecutándose.");
-}).catch((err) => {
-  console.error(`Error al iniciar Minecraft: ${err}`);
-});
+  await executor.start({
+    root: "./Minecraft",
+    javaPath: "/home/stepnickasantiago/Escritorio/Projects/Minecraft-Core-Master/Minecraft/runtime/Java24/bin/java",
+    memory: { max: "6G", min: "1G" },
+    window: { width: 854, height: 480, fullscreen: false },
+    version: { versionID: "1.21.6", type: "release" },
+    authenticator: {
+      username: "Stepnicka012",
+      password: "StepnickaSantiago012"
+    },
+    //jvm: [],               // Opcional, flags JVM extras
+    // mcArgs: [],         // Opcional, argumentos Minecraft extras
+    debug: false,          // Opcional, activa logs detallados
+  });
 
-launcher.on('debug', (message) => {
-  console.log(`[DEBUG] ${message}`);
-});
-
-launcher.on('error', (err) => {
-  console.error(`[ERROR] ${err}`);
-});
-
-launcher.on('data', (data) => {
-  console.log(`[DATA] ${data}`);
-});
+  executor.on("data", (data) => console.log("[MC STDOUT]", data));
+  executor.on("error", (err) => console.error("[MC STDERR]", err));
+  executor.on("close", (code) => console.log("Minecraft cerrado con código", code));
+})();

@@ -1,189 +1,207 @@
-const { EventEmitter } = require("events");
-const { spawn, exec }  = require("child_process");
-const path             = require("path");
-const fs               = require("fs/promises");
-const fsSync           = require("fs");
+const { EventEmitter } = require('events');
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs/promises');
+const fsSync = require('fs');
+const crypto = require('crypto');
 
-const { platformName   } = require("./utils/platform");
-const { formatTimestamp} = require("./utils/time");
+const { platformName } = require('./utils/platform');
+const { formatTimestamp } = require('./utils/time');
+const { JVMManager } = require('./utils/jvmManager');
 
-const { UserManager    } = require("./utils/UserManager");
-const { VersionResolver} = require("./utils/VersionResolver");
-const { LibraryManager } = require("./utils/LibraryManager");
-const { AssetsManager  } = require("./utils/AssetsManager");
-const { NativesManager } = require("./utils/NativesManager");
+const UserManager = require('./utils/UserManager');
+const { VersionResolver } = require('./utils/VersionResolver');
+const { LibraryManager } = require('./utils/LibraryManager');
+const { AssetsManager } = require('./utils/AssetsManager');
+const { NativesManager } = require('./utils/NativesManager');
+const { LaunchArgumentBuilder } = require('./utils/jvmArgumentBuilder');
 
 class MinecraftExecutor extends EventEmitter {
   log = [];
-  opts = {};
 
   async start(opts) {
-    if (!opts?.version?.versionID) throw new Error("Missing versionID");
+    if (!opts?.version?.versionID) throw new Error('Falta versionID');
 
-    // ---------- opciones ----------
     this.opts = {
-      root: path.resolve(opts.root || "./minecraft"),
-      javaPath: opts.javaPath || "java",
-      memory:    opts.memory  || { max: "2G", min: "1G" },
-      window:    opts.window  || { width: 854, height: 480, fullscreen: false },
+      root: path.resolve(opts.root || './minecraft'),
+      memory: opts.memory || { max: '2G', min: '1G' },
+      window: opts.window || { width: 854, height: 480, fullscreen: false },
       overrides: opts.overrides || {},
-      jvm:       opts.jvm || [],          // flags extra para JVM
-      mcArgs:    opts.mcArgs || [],       // args extra para Minecraft
-      version:   opts.version,
-      user:      opts.user,
-      debug:     opts.debug ?? false,
+      jvm: opts.jvm || [],
+      mcArgs: opts.mcArgs || [],
+      version: opts.version,
+      authenticator: opts.authenticator,
+      debug: opts.debug ?? false,
+      javaPath: opts.javaPath || null,
     };
 
-    // ---------- validar java ----------
-    if (this.opts.javaPath.includes(path.sep) && !path.isAbsolute(this.opts.javaPath)) {
-      // Si javaPath es relativo con separadores, lo resolvemos como absoluto con base en root
-      this.opts.javaPath = path.resolve(this.opts.root, this.opts.javaPath);
-    }
+    this.opts.javaPath = await JVMManager.resolve(this.opts.javaPath, this.opts.root);
 
-    const isPath = this.opts.javaPath.includes(path.sep);
-    if (isPath) {
-      try {
-        await fs.access(this.opts.javaPath, fsSync.constants.X_OK);
-      } catch {
-        throw new Error(`Java no encontrado o sin permisos: ${this.opts.javaPath}`);
-      }
-    } else {
-      // Validar java en PATH ejecutando 'java -version'
-      const existsInPath = await new Promise(resolve => {
-        exec(`${this.opts.javaPath} -version`, (error) => {
-          resolve(!error);
-        });
-      });
-      if (!existsInPath) throw new Error(`Java no encontrado en PATH: ${this.opts.javaPath}`);
-    }
-
-    // ---------- user ----------
+    // --- Usuario / Auth ---
     const userManager = new UserManager(this.opts.root);
-    this.opts.user = await userManager.resolve(this.opts.user);
-    const user = this.opts.user;
-    if (!user.name || !user.uuid || !user.accessToken)
-      throw new Error("User information incomplete");
+    const name = this.opts.authenticator?.username;
+    if (!name) throw new Error('authenticator.username es obligatorio');
 
-    // ---------- versión ----------
+    const offlineUUID = (name) =>
+      crypto.createHash('md5').update(`OfflinePlayer:${name}`).digest('hex');
+
+    let profile;
+    if (this.opts.authenticator.password) {
+      profile = await userManager.loginMojang(name, this.opts.authenticator.password);
+    } else {
+      profile = await userManager.resolve({ name }) || {
+        name,
+        uuid: offlineUUID(name),
+        accessToken: 'null',
+        type: 'legacy',
+      };
+    }
+    // --- Version ---
     const versionResolver = new VersionResolver(this.opts.root, this.opts.version);
     await versionResolver.ensurePresent();
     const versionData = await versionResolver.getData();
-    const vId = versionData.id || versionData.inheritsFrom;
+    const versionId = versionData.id || versionData.inheritsFrom;
 
-    // ---------- assets ----------
+    // Detectar versión legacy (menor a 1.6.1)
+    const [major, minor, patch] = versionId.split('.').map(n => parseInt(n) || 0);
+    const isLegacy =
+      major < 1 ||
+      (major === 1 && minor < 6) ||
+      (major === 1 && minor === 6 && patch < 1);
+
+    // --- Assets ---
     const assetsManager = new AssetsManager(this.opts.root, versionData);
     await assetsManager.ensurePresent();
 
-    // ---------- nativos ----------
+    // Forzar assetsDir según legacy o no
+    const assetsDir = isLegacy
+      ? path.join(this.opts.root, 'assets', 'virtual', 'legacy')
+      : assetsManager.getAssetsDir();
+
+    // --- Resources (solo para versiones legacy) ---
+    if (isLegacy) {
+      const resourcesPath = path.join(this.opts.root, 'resources');
+      try {
+        await fs.access(resourcesPath);
+        // Ya existe
+      } catch {
+        if (this.opts.debug)
+          console.log('[LegacyFix] Creando carpeta resources/ vacía para versión legacy');
+        await fs.mkdir(resourcesPath, { recursive: true });
+      }
+    }
+
+    // --- Natives ---
     const nativesManager = new NativesManager(this.opts.root, versionData);
     await nativesManager.ensureDir();
     const nativesDir = nativesManager.getNativesDir();
 
-    // Recolectar todas las carpetas con libs nativos para java.library.path
-    const nativePathList = [nativesDir];
-    for (const dir of await fs.readdir(path.join(this.opts.root, "natives"))) {
-      const fullDir = path.join(this.opts.root, "natives", dir);
-      if (dir.startsWith(vId) && fsSync.statSync(fullDir).isDirectory()) {
-        nativePathList.push(fullDir);
+    // Extra natives folders para versiones específicas
+    const extraNativeDirs = [];
+    try {
+      const nativesRoot = path.join(this.opts.root, 'natives');
+      const list = await fs.readdir(nativesRoot);
+      for (const name of list) {
+        const full = path.join(nativesRoot, name);
+        if (name.startsWith(versionId) && fsSync.statSync(full).isDirectory()) {
+          extraNativeDirs.push(full);
+        }
       }
-    }
-    const javaLibraryPath = nativePathList.join(path.delimiter);
+    } catch {}
 
-    // ---------- classpath ----------
-    const libManager = new LibraryManager(this.opts.root, versionData, platformName());
-    const classPath  = await libManager.buildClasspath();
+    const javaLibPath = [nativesDir, ...extraNativeDirs].join(path.delimiter);
 
-    // Guardar classpath en logs
-    const logsDir = path.join(this.opts.root, "logs");
-    await fs.mkdir(logsDir, { recursive: true });
-    await fs.writeFile(path.join(logsDir, "latest_cp.txt"), classPath);
+    // --- Librerías ---
+    const libManager = new LibraryManager(this.opts.root, versionData, platformName(), {
+      debug: this.opts.debug,
+    });
+    const classPath = await libManager.buildClasspath();
 
-    // ---------- JVM flags ----------
-    const baseJvmFlags = [
-      "-XX:+UseG1GC",
-      "-XX:+UnlockExperimentalVMOptions",
-      "-XX:+DisableExplicitGC",
-      "-XX:G1NewSizePercent=20",
-      "-XX:G1ReservePercent=20",
-      "-XX:MaxGCPauseMillis=50",
-      "-XX:G1HeapRegionSize=32M",
-      "--enable-native-access=ALL-UNNAMED",
-      `-Xmx${this.opts.memory.max}`,
-      `-Xms${this.opts.memory.min}`,
-      `-Djava.library.path=${javaLibraryPath}`,
-      "-cp", classPath,
-      ...this.opts.jvm, // flags custom
-    ];
-
-    // ---------- args Minecraft ----------
-    const mcArgs = [
-      versionData.mainClass,
-      "--username",    user.name,
-      "--uuid",        user.uuid,
-      "--accessToken", user.accessToken,
-      "--version",     this.opts.version.versionID,
-      "--gameDir",     this.opts.overrides.gameDirectory || this.opts.root,
-      "--assetsDir",   assetsManager.getAssetsDir(),
-      "--assetIndex",  assetsManager.getAssetIndexId(),
-      "--userType",    user.type || "legacy",
-      "--width",       String(this.opts.window.width),
-      "--height",      String(this.opts.window.height),
-      ...(this.opts.window.fullscreen ? ["--fullscreen"] : []),
-      ...this.opts.mcArgs, // args custom
-    ];
-
-    // ---------- debug ----------
-    if (this.opts.debug) {
-      const shownCP = classPath.split(path.delimiter);
-      console.log(
-        "\n· JAVA:", this.opts.javaPath,
-        "\n· NATIVES:", javaLibraryPath,
-        `\n· CP: ${shownCP.length} elementos (se muestran 3)`,
-        shownCP.slice(0,3).map(s => `\n   - ${s}`).join(""),
-        "\n"
-      );
-    }
-
-    // ---------- lanzar ----------
-    return this.#launch([this.opts.javaPath, ...baseJvmFlags, ...mcArgs]);
-  }
-
-  #launch(args) {
-    const proc = spawn(args[0], args.slice(1), {
-      cwd: this.opts.overrides.gameDirectory || this.opts.root,
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
+    // --- Argumentos JVM / Game ---
+    const argBuilder = new LaunchArgumentBuilder({
+      javaPath: this.opts.javaPath,
+      root: this.opts.root,
+      memory: this.opts.memory,
+      authorization: {
+        access_token: profile.accessToken,
+        name: profile.name,
+        uuid: profile.uuid,
+        type: profile.type,
+        user_properties: profile.userProperties || '{}',
+        meta: profile.meta || {},
+        client_token: profile.clientToken || '',
+      },
+      version: {
+        number: versionId,
+        type: versionData.type,
+        custom: versionData.custom || null,
+      },
+      versionFile: versionData,
+      customFile: opts.customFile || {},
+      libs: classPath,
+      nativePath: javaLibPath,
+      extraJvm: this.opts.jvm,
+      extraMcArgs: this.opts.mcArgs,
+      window: this.opts.window,
+      overrides: {
+        ...this.opts.overrides,
+        assetsDir,
+        versionName: versionId,
+        assetIndex: versionData.assets || versionData.assetIndex?.id || versionId,
+      },
     });
 
-    proc.stdout.on("data", d => this.#pushLog("data", d));
-    proc.stderr.on("data", d => this.#pushLog("error", d));
+    const argv = argBuilder.build();
 
-    proc.on("close", code => {
-      if (code !== 0 && this.log.length) this.#writeCrash(code);
-      this.emit("close", code);
+    if (this.opts.debug) {
+      console.log('> JAVA PATH:', this.opts.javaPath);
+      console.log('> ARGUMENTOS:', argv.slice(1).join(' '));
+      console.log('> AssetsDir:', assetsDir);
+    }
+
+    return this.#launch(argv);
+  }
+
+  #launch(argv) {
+    const proc = spawn(argv[0], argv.slice(1), {
+      cwd: this.opts.overrides.gameDirectory || this.opts.root,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    proc.stdout.on('data', (d) => this.#push('data', d));
+    proc.stderr.on('data', (d) => this.#push('error', d));
+
+    proc.on('close', async (code) => {
+      if (code !== 0 && this.log.length) await this.#writeCrash(code);
+      this.emit('close', code);
       this.log = [];
     });
 
-    proc.on("error", err => {
-      this.emit("error", err.message);
-      this.emit("close", 1);
+    proc.on('error', (err) => {
+      this.emit('error', err.message);
+      this.emit('close', 1);
     });
-    proc.unref();
+
     return proc;
   }
 
-  #pushLog(channel, data) {
-    const msg = data.toString();
-    this.emit(channel, msg);
-    this.log.push(`${formatTimestamp()} ${channel === "error" ? "[ERR] " : ""}${msg}`);
+  #push(chan, buf) {
+    const msg = buf.toString();
+    this.emit(chan, msg);
+    this.log.push(`${formatTimestamp()} ${chan === 'error' ? '[ERR]' : ''} ${msg}`);
   }
 
   async #writeCrash(code) {
-    const crashName = `stepLauncher_crash_${new Date().toISOString().replace(/[:.]/g,"-")}_code${code}.log`;
-    const file = path.join(this.opts.root, "logs", crashName);
-    await fs.writeFile(file, this.log.join(""));
-    console.error(`\nCrash log guardado en ${file}`);
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const logDir = path.join(this.opts.root, 'logs');
+    const file = path.join(logDir, `mc_crash_${ts}_code${code}.log`);
+    try {
+      await fs.mkdir(logDir, { recursive: true });
+      await fs.writeFile(file, this.log.join(''));
+    } catch (err) {
+      console.error('Error al guardar el crash log:', err.message);
+    }
   }
 }
 
-module.exports = { MinecraftExecutor };
+module.exports = MinecraftExecutor;

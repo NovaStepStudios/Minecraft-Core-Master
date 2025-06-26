@@ -1,4 +1,5 @@
 const { MinecraftDownloader } = require('../index.js');
+
 const downloaderMC = new MinecraftDownloader("./Minecraft", "Java24", "release");
   downloaderMC.on("progress", (message) => {
   console.log(`[Progreso] ${message}`);
