@@ -42,7 +42,7 @@ downloader.on("error", (err) => console.error("[❌]", err));
     console.error("❌ Error en la descarga:", e);
   }
 })();
-
+```
 #### 🔧 Constructor
 
 | Parámetro     | Tipo               | Descripción                                                               |
@@ -169,5 +169,3 @@ Cada archivo incluye pruebas reales con eventos de progreso, error y finalizaci�
 
 **Desarrollado con pasión y precisión por Santiago Stepnicka (a.k.a. Stepnicka)**
 🎯 Transformando launchers de Minecraft en plataformas profesionales.
-
-```
