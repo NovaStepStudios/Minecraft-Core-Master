@@ -1,59 +1,100 @@
 const fetch = require('node-fetch');
+const crypto = require('crypto');
+const http = require('http');
+const open = require('open').default;
 
-const MS_OAUTH_URL = 'https://login.live.com/oauth20_token.srf';
+const MS_AUTH_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize';
+const MS_TOKEN_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
 const XBL_AUTH_URL = 'https://user.auth.xboxlive.com/user/authenticate';
 const XSTS_AUTH_URL = 'https://xsts.auth.xboxlive.com/xsts/authorize';
 const MINECRAFT_AUTH_URL = 'https://api.minecraftservices.com/authentication/login_with_xbox';
 
 class AuthenticatorMicrosoft {
   constructor() {
-    this.clientId = '00000000402b5328'; // clientId oficial para Minecraft (puede cambiar)
+    this.clientId = 'c3b7b1ee-a7ed-40ef-b6b1-48483b2de93c';
     this.scope = 'XboxLive.signin offline_access';
-    this.redirectUri = 'https://login.live.com/oauth20_desktop.srf';
+    this.redirectUri = 'https://localhost:3000/outh';
   }
 
-  /**
-   * Login con usuario y contraseña Microsoft (no recomendado para producción)
-   * @param {string} username 
-   * @param {string} password 
-   * @returns {Promise<object>} tokens + perfil
-   */
-  async login(username, password) {
-    if (!username || !password) throw new Error('Usuario y contraseña requeridos');
+  generatePKCE() {
+    const verifier = crypto.randomBytes(32).toString('hex');
+    const challenge = this.base64URLEncode(
+      crypto.createHash('sha256').update(verifier).digest()
+    );
+    return { verifier, challenge };
+  }
 
-    // Paso 1: Obtener token de acceso Microsoft vía Resource Owner Password Credentials (no oficial)
-    const msToken = await this.getMsTokenROPC(username, password);
+  base64URLEncode(buffer) {
+    return buffer.toString('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+  }
 
-    // Paso 2: Autenticar en Xbox Live
-    const xblToken = await this.getXBLToken(msToken.access_token);
+  async login() {
+    const { verifier, challenge } = this.generatePKCE();
 
-    // Paso 3: Obtener token XSTS
+    const authUrl = `${MS_AUTH_URL}?client_id=${this.clientId}&response_type=code&redirect_uri=${encodeURIComponent(this.redirectUri)}&scope=${encodeURIComponent(this.scope)}&code_challenge=${challenge}&code_challenge_method=S256&response_mode=query`;
+
+    // Abrir navegador
+    open(authUrl);
+
+    const code = await new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => {
+        // Escuchar la ruta /outh que definiste en redirectUri
+        if (req.url.startsWith('/outh')) {
+          const url = new URL(`http://localhost:3000${req.url}`);
+          const authCode = url.searchParams.get('code');
+          res.writeHead(200, {'Content-Type': 'text/html'});
+          res.end('<h2>Login completado! Podés cerrar esta ventana.</h2>');
+          server.close();
+          if (authCode) resolve(authCode);
+          else reject(new Error('No se recibió código de autorización'));
+        }
+      }).listen(3000);
+    });
+
+    const tokenResponse = await this.getTokens(code, verifier);
+
+    const xblToken = await this.getXBLToken(tokenResponse.access_token);
     const xstsToken = await this.getXSTSToken(xblToken.Token);
+    const mcAuth = await this.loginMinecraft(xstsToken.Token, xstsToken.DisplayClaims.xui[0].uhs);
 
-    // Paso 4: Login Minecraft con token XSTS
-    const mcProfile = await this.loginMinecraft(xstsToken.Token, xstsToken.DisplayClaims.xui[0].uhs);
+    const profileRes = await fetch('https://api.minecraftservices.com/minecraft/profile', {
+      headers: {
+        Authorization: `Bearer ${mcAuth.access_token}`
+      }
+    });
 
-    return mcProfile;
+    if (!profileRes.ok) throw new Error(`Error obteniendo perfil de Minecraft: ${profileRes.statusText}`);
+    const profile = await profileRes.json();
+
+    return {
+      uuid: profile.id,
+      name: profile.name,
+      accessToken: mcAuth.access_token,
+      refreshToken: tokenResponse.refresh_token,
+      type: 'microsoft',
+      user_properties: '{}',
+    };
   }
 
-  async getMsTokenROPC(username, password) {
-    // NOTA: este flujo puede no estar siempre disponible o bloquearse por MS
+  async getTokens(code, verifier) {
     const params = new URLSearchParams();
     params.append('client_id', this.clientId);
-    params.append('grant_type', 'password');
-    params.append('scope', this.scope);
-    params.append('username', username);
-    params.append('password', password);
+    params.append('grant_type', 'authorization_code');
+    params.append('code', code);
     params.append('redirect_uri', this.redirectUri);
+    params.append('code_verifier', verifier);
 
-    const res = await fetch(MS_OAUTH_URL, {
+    const res = await fetch(MS_TOKEN_URL, {
       method: 'POST',
-      body: params
+      body: params,
     });
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Error MS OAuth: ${res.status} ${text}`);
+      throw new Error(`Error obteniendo tokens MS: ${res.status} ${text}`);
     }
 
     return res.json();
@@ -64,16 +105,16 @@ class AuthenticatorMicrosoft {
       Properties: {
         AuthMethod: 'RPS',
         SiteName: 'user.auth.xboxlive.com',
-        RpsTicket: `d=${msAccessToken}`
+        RpsTicket: `d=${msAccessToken}`,
       },
       RelyingParty: 'http://auth.xboxlive.com',
-      TokenType: 'JWT'
+      TokenType: 'JWT',
     };
 
     const res = await fetch(XBL_AUTH_URL, {
       method: 'POST',
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
 
     if (!res.ok) {
@@ -88,16 +129,16 @@ class AuthenticatorMicrosoft {
     const body = {
       Properties: {
         SandboxId: 'RETAIL',
-        UserTokens: [xblToken]
+        UserTokens: [xblToken],
       },
       RelyingParty: 'rp://api.minecraftservices.com/',
-      TokenType: 'JWT'
+      TokenType: 'JWT',
     };
 
     const res = await fetch(XSTS_AUTH_URL, {
       method: 'POST',
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
 
     if (!res.ok) {
@@ -110,13 +151,13 @@ class AuthenticatorMicrosoft {
 
   async loginMinecraft(xstsToken, userHash) {
     const body = {
-      identityToken: `XBL3.0 x=${userHash};${xstsToken}`
+      identityToken: `XBL3.0 x=${userHash};${xstsToken}`,
     };
 
     const res = await fetch(MINECRAFT_AUTH_URL, {
       method: 'POST',
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
 
     if (!res.ok) {

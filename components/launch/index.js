@@ -2,7 +2,6 @@ const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs/promises');
-const fsSync = require('fs');
 const crypto = require('crypto');
 
 const { platformName } = require('./utils/platform');
@@ -36,88 +35,73 @@ class MinecraftExecutor extends EventEmitter {
     };
 
     this.opts.javaPath = await JVMManager.resolve(this.opts.javaPath, this.opts.root);
+    if (this.opts.debug) console.log("[DEBUG] JVMManager resolvió javaPath a:", this.opts.javaPath);
 
-    // --- Usuario / Auth ---
+    // --- Autenticación ---
     const userManager = new UserManager(this.opts.root);
     const name = this.opts.authenticator?.username;
-    if (!name) throw new Error('authenticator.username es obligatorio');
+    const provider = this.opts.authenticator?.provider || 'legacy';
+    const password = this.opts.authenticator?.password || null;
+    const email = this.opts.authenticator?.email || null;
 
-    const offlineUUID = (name) =>
-      crypto.createHash('md5').update(`OfflinePlayer:${name}`).digest('hex');
+    if (!name) throw new Error('[✖] El campo authenticator.username es obligatorio');
+    if (provider === 'microsoft' && !email) throw new Error('[✖] El campo authenticator.email es obligatorio para Microsoft');
 
+    const offlineUUID = name => crypto.createHash('md5').update(`OfflinePlayer:${name}`).digest('hex');
     let profile;
-    if (this.opts.authenticator.password) {
-      profile = await userManager.loginMojang(name, this.opts.authenticator.password);
-    } else {
-      profile = await userManager.resolve({ name }) || {
-        name,
-        uuid: offlineUUID(name),
-        accessToken: 'null',
-        type: 'legacy',
-      };
+
+    try {
+      profile = await userManager.resolve({ name });
+      if (!(await userManager.validateAccessToken(profile))) {
+        if (!password) {
+          console.warn('[Auth] Token inválido, usando modo offline.');
+          profile = { name, uuid: offlineUUID(name), accessToken: 'null', type: 'legacy' };
+        } else {
+          console.log(`[Auth] Reintentando login (${provider})...`);
+          profile = await userManager.login(name, password, provider, email);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Auth] Error durante la autenticación: ${err.message}`);
+      profile = { name, uuid: offlineUUID(name), accessToken: 'null', type: 'legacy' };
     }
-    // --- Version ---
+
+    // --- Versión ---
     const versionResolver = new VersionResolver(this.opts.root, this.opts.version);
     await versionResolver.ensurePresent();
     const versionData = await versionResolver.getData();
     const versionId = versionData.id || versionData.inheritsFrom;
 
-    // Detectar versión legacy (menor a 1.6.1)
-    const [major, minor, patch] = versionId.split('.').map(n => parseInt(n) || 0);
-    const isLegacy =
-      major < 1 ||
-      (major === 1 && minor < 6) ||
-      (major === 1 && minor === 6 && patch < 1);
+    if (!versionData.mainClass) {
+      // Loguea todo para debug si no hay mainClass
+      console.error("[ERROR] mainClass NO definido en versionData. Keys:", Object.keys(versionData).join(", "));
+      throw new Error(`mainClass no definido para la versión ${versionId}`);
+    }
 
-    // --- Assets ---
+    const [major, minor, patch] = versionId.split('.').map(n => parseInt(n) || 0);
+    const isLegacy = major < 1 || (major === 1 && minor < 6) || (major === 1 && minor === 6 && patch < 1);
+
     const assetsManager = new AssetsManager(this.opts.root, versionData);
     await assetsManager.ensurePresent();
 
-    // Forzar assetsDir según legacy o no
     const assetsDir = isLegacy
       ? path.join(this.opts.root, 'assets', 'virtual', 'legacy')
       : assetsManager.getAssetsDir();
 
-    // --- Resources (solo para versiones legacy) ---
     if (isLegacy) {
       const resourcesPath = path.join(this.opts.root, 'resources');
-      try {
-        await fs.access(resourcesPath);
-        // Ya existe
-      } catch {
-        if (this.opts.debug)
-          console.log('[LegacyFix] Creando carpeta resources/ vacía para versión legacy');
+      try { await fs.access(resourcesPath); } catch {
+        if (this.opts.debug) console.log('[LegacyFix] Creando carpeta resources/ vacía');
         await fs.mkdir(resourcesPath, { recursive: true });
       }
     }
 
-    // --- Natives ---
-    const nativesManager = new NativesManager(this.opts.root, versionData);
-    await nativesManager.ensureDir();
-    const nativesDir = nativesManager.getNativesDir();
-
-    // Extra natives folders para versiones específicas
-    const extraNativeDirs = [];
-    try {
-      const nativesRoot = path.join(this.opts.root, 'natives');
-      const list = await fs.readdir(nativesRoot);
-      for (const name of list) {
-        const full = path.join(nativesRoot, name);
-        if (name.startsWith(versionId) && fsSync.statSync(full).isDirectory()) {
-          extraNativeDirs.push(full);
-        }
-      }
-    } catch {}
-
-    const javaLibPath = [nativesDir, ...extraNativeDirs].join(path.delimiter);
-
-    // --- Librerías ---
-    const libManager = new LibraryManager(this.opts.root, versionData, platformName(), {
+    const { classpath, nativePath } = await this.prepareEnvironment({
+      root: this.opts.root,
+      versionData,
       debug: this.opts.debug,
     });
-    const classPath = await libManager.buildClasspath();
 
-    // --- Argumentos JVM / Game ---
     const argBuilder = new LaunchArgumentBuilder({
       javaPath: this.opts.javaPath,
       root: this.opts.root,
@@ -138,8 +122,8 @@ class MinecraftExecutor extends EventEmitter {
       },
       versionFile: versionData,
       customFile: opts.customFile || {},
-      libs: classPath,
-      nativePath: javaLibPath,
+      libs: classpath,
+      nativePath,
       extraJvm: this.opts.jvm,
       extraMcArgs: this.opts.mcArgs,
       window: this.opts.window,
@@ -151,7 +135,7 @@ class MinecraftExecutor extends EventEmitter {
       },
     });
 
-    const argv = argBuilder.build();
+    const argv = await argBuilder.build();
 
     if (this.opts.debug) {
       console.log('> JAVA PATH:', this.opts.javaPath);
@@ -161,6 +145,74 @@ class MinecraftExecutor extends EventEmitter {
 
     return this.#launch(argv);
   }
+  async prepareEnvironment({ root, versionData, debug }) {
+    const platform = platformName();
+    const libManager = new LibraryManager(root, versionData, platform, { debug });
+
+    // Construir classpath completo
+    const classpath = await libManager.buildClasspath();
+
+    // Determinar id de la versión para nativos
+    let versionId = versionData.id || versionData.inheritsFrom;
+    if (!versionId) throw new Error("No se pudo determinar el versionId");
+
+    // Crear instancia de NativesManager para la versión actual
+    const nativesManager = new NativesManager(root, versionData);
+    await nativesManager.ensureDir();
+
+    // Extraer nativos oficiales a la carpeta base de nativos
+    await libManager.extractNatives(nativesManager.getNativesDir());
+
+    // Verificar si la carpeta de nativos está vacía
+    const nativesDir = nativesManager.getNativesDir();
+    let nativesExist = false;
+    try {
+      const files = await fs.readdir(nativesDir);
+      nativesExist = files.length > 0;
+    } catch {
+      nativesExist = false;
+    }
+
+    // Si no hay nativos, intentar usar los de la versión vanilla base
+    if (!nativesExist && versionData.inheritsFrom) {
+      if (debug) console.log(`[prepareEnvironment] No hay nativos para ${versionId}, intentando vanilla base ${versionData.inheritsFrom}`);
+
+      // Cargar datos de la versión vanilla base
+      const vanillaVersionResolver = new VersionResolver(root, { versionID: versionData.inheritsFrom });
+      const vanillaVersionData = await vanillaVersionResolver.getData();
+
+      const vanillaNativesManager = new NativesManager(root, vanillaVersionData);
+      await vanillaNativesManager.ensureDir();
+
+      const vanillaLibManager = new LibraryManager(root, vanillaVersionData, platform, { debug });
+      await vanillaLibManager.extractNatives(vanillaNativesManager.getNativesDir());
+
+      const nativePath = vanillaNativesManager.getNativesDir();
+
+      if (debug) console.log(`[prepareEnvironment] nativePath vanilla usado: ${nativePath}`);
+
+      return { classpath, nativePath };
+    }
+
+    // Preparar otros posibles nativos extraídos (con sufijos únicos)
+    const nativeDirs = Array.from(libManager.extractedNatives)
+      .filter(dir => dir !== nativesManager.getNativesDir())
+      .map(nativePath => 
+        path.join(root, 'natives', `${versionId}-${path.basename(nativePath).replace(/[:.]/g, '_')}`)
+      );
+
+    // Componer java.library.path con todos los directorios de nativos
+    const nativePath = [nativesManager.getNativesDir(), ...nativeDirs].join(path.delimiter);
+
+    if (debug) {
+      console.log("[prepareEnvironment] classpath:", classpath);
+      console.log("[prepareEnvironment] nativePath:", nativePath);
+    }
+
+    return { classpath, nativePath };
+  }
+
+
 
   #launch(argv) {
     const proc = spawn(argv[0], argv.slice(1), {
@@ -168,8 +220,8 @@ class MinecraftExecutor extends EventEmitter {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    proc.stdout.on('data', (d) => this.#push('data', d));
-    proc.stderr.on('data', (d) => this.#push('error', d));
+    proc.stdout.on('data', d => this.#push('data', d));
+    proc.stderr.on('data', d => this.#push('error', d));
 
     proc.on('close', async (code) => {
       if (code !== 0 && this.log.length) await this.#writeCrash(code);
@@ -177,7 +229,7 @@ class MinecraftExecutor extends EventEmitter {
       this.log = [];
     });
 
-    proc.on('error', (err) => {
+    proc.on('error', err => {
       this.emit('error', err.message);
       this.emit('close', 1);
     });

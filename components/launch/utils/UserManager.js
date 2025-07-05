@@ -5,29 +5,7 @@ const { v3: uuidv3 } = require('uuid');
 const { default: fetch } = require('node-fetch');
 const AuthenticatorMicrosoft = require('./AuthenticatorMicrosoft');
 
-const API_URL = 'https://api.minecraftservices.com/';
-
-async function post(endpoint, body) {
-  const res = await fetch(`${API_URL}${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': 'minecraft-core-authenticator'
-    },
-    body: JSON.stringify(body)
-  });
-
-  const text = await res.text();
-  if (!text) return null;
-
-  try {
-    const json = JSON.parse(text);
-    if (json.error) throw new Error(json.errorMessage || json.error);
-    return json;
-  } catch (err) {
-    throw new Error(`Error en ${endpoint}: ${err.message}`);
-  }
-}
+const MOJANG_AUTH_URL = 'https://authserver.mojang.com';
 
 function parseProps(array) {
   if (!Array.isArray(array)) return '{}';
@@ -47,7 +25,52 @@ class UserManager {
     this._profilesCache = null;
     this.msAuthenticator = new AuthenticatorMicrosoft();
   }
-
+  async validateAccessToken(profile) {
+    if (!profile || !profile.accessToken) return false;
+  
+    try {
+      const res = await fetch('https://api.minecraftservices.com/minecraft/profile', {
+        headers: {
+          Authorization: `Bearer ${profile.accessToken}`,
+        },
+      });
+  
+      return res.status === 200;
+    } catch {
+      return false;
+    }
+  }
+  
+  async refreshAccessToken(profile) {
+    if (!profile || !profile.type || !profile.accessToken) return null;
+  
+    if (profile.type === 'microsoft') {
+      if (this.msAuthenticator && this.msAuthenticator.refresh) {
+        try {
+          const newProfile = await this.msAuthenticator.refresh(profile);
+          if (newProfile) {
+            await this._saveUpdatedProfile(newProfile);
+            console.log('[✔] Token Microsoft refrescado');
+            return newProfile;
+          }
+        } catch {
+          return null;
+        }
+      }
+    }
+  
+    // Mojang no permite refresh desde 2021 (tokens permanentes por sesión)
+    return null;
+  }
+  
+  async _saveUpdatedProfile(profile) {
+    const profiles = await this._loadProfiles();
+    const idx = profiles.findIndex(p => p.uuid === profile.uuid);
+    if (idx >= 0) profiles[idx] = profile;
+    else profiles.push(profile);
+    await this._saveProfiles(profiles);
+  }
+  
   async _loadProfiles() {
     if (this._profilesCache) return this._profilesCache;
 
@@ -66,11 +89,7 @@ class UserManager {
 
   async _saveProfiles(profiles) {
     this._profilesCache = profiles;
-    await fs.writeFile(
-      this.profilesPath,
-      JSON.stringify(profiles, null, 2),
-      'utf-8'
-    );
+    await fs.writeFile(this.profilesPath, JSON.stringify(profiles, null, 2), 'utf-8');
   }
 
   async resolve(user) {
@@ -94,75 +113,137 @@ class UserManager {
   }
 
   async loginMojang(username, password) {
-    if (!username || !password) throw new Error("Username y password requeridos");
-
-    const uuid = uuidv3(username, uuidv3.DNS);
-    const response = await post('/authenticate', {
-      agent: { name: 'Minecraft', version: 1 },
-      username,
-      password,
-      clientToken: uuid,
-      requestUser: true
+    if (!username || !password) throw new Error('[✖] Username y password requeridos para Mojang');
+  
+    console.log(`[Auth] Iniciando sesión Mojang para ${username}...`);
+  
+    // Intentar cargar perfiles existentes para obtener clientToken guardado
+    const profiles = await this._loadProfiles();
+    let existingProfile = profiles.find(p => p.name === username && p.type === 'mojang');
+    let clientToken;
+  
+    if (existingProfile && existingProfile.clientToken) {
+      clientToken = existingProfile.clientToken;
+    } else {
+      // Generar nuevo clientToken único y persistente
+      clientToken = crypto.randomUUID();
+    }
+  
+    const res = await fetch(MOJANG_AUTH_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'minecraft-core-authenticator'
+      },
+      body: JSON.stringify({
+        agent: { name: 'Minecraft', version: 1 },
+        username,
+        password,
+        clientToken,
+        requestUser: true
+      })
     });
-
+  
+    const text = await res.text();
+    if (!text) throw new Error('[✖] Respuesta vacía de Mojang');
+  
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (err) {
+      throw new Error(`[✖] Error parseando respuesta Mojang: ${err.message}`);
+    }
+  
+    if (json.error) throw new Error(`[✖] ${json.errorMessage || json.error}`);
+  
     const userProfile = {
-      uuid: response.selectedProfile?.id,
-      name: response.selectedProfile?.name,
-      accessToken: response.accessToken,
-      clientToken: response.clientToken,
-      user_properties: parseProps(response.user?.properties),
+      uuid: json.selectedProfile?.id,
+      name: json.selectedProfile?.name,
+      accessToken: json.accessToken,
+      clientToken: json.clientToken || clientToken, // asegurar clientToken guardado
+      user_properties: parseProps(json.user?.properties),
       type: 'mojang'
     };
-
-    const profiles = await this._loadProfiles();
+  
     const idx = profiles.findIndex(p => p.uuid === userProfile.uuid);
-
-    if (idx >= 0) {
-      profiles[idx] = userProfile;
-    } else {
-      profiles.push(userProfile);
-    }
-
+    if (idx >= 0) profiles[idx] = userProfile;
+    else profiles.push(userProfile);
+  
     await this._saveProfiles(profiles);
+    console.log(`[✔] Login exitoso Mojang: ${userProfile.name}`);
     return userProfile;
-  }
+  }  
 
-  // Login Microsoft usando AuthenticatorMicrosoft
-  async loginMicrosoft(username, password) {
-    if (!username || !password) throw new Error("Username y password requeridos para Microsoft");
-
-    const msProfile = await this.msAuthenticator.login(username, password);
+  async loginMicrosoft(username, password, email) {
+    if (!username || !password || !email) 
+      throw new Error('[✖] Username, password y email requeridos para Microsoft');
+  
+    console.log(`[Auth] Iniciando sesión Microsoft para ${username} (email: ${email})...`);
+    const msProfile = await this.msAuthenticator.login(username, password, email);
 
     const userProfile = {
-      uuid: msProfile.id,  // UUID Microsoft
+      uuid: msProfile.id,
       name: msProfile.name || username,
+      email,  // guardamos el email en el perfil
       accessToken: msProfile.access_token,
       clientToken: msProfile.access_token,
       user_properties: '{}',
       type: 'microsoft'
     };
-
+  
     const profiles = await this._loadProfiles();
     const idx = profiles.findIndex(p => p.uuid === userProfile.uuid);
     if (idx >= 0) profiles[idx] = userProfile;
     else profiles.push(userProfile);
+  
+    await this._saveProfiles(profiles);
+    console.log(`[✔] Login exitoso Microsoft: ${userProfile.name}`);
+    return userProfile;
+  }
+
+  async loginLegacy(username) {
+    if (!username) throw new Error('[✖] Username requerido para cuenta legacy');
+
+    console.log(`[Auth] Usando cuenta legacy offline: ${username}`);
+    const uuid = uuidv3(username, uuidv3.DNS);
+
+    const userProfile = {
+      uuid,
+      name: username,
+      accessToken: '',
+      clientToken: '',
+      user_properties: '{}',
+      type: 'legacy'
+    };
+
+    const profiles = await this._loadProfiles();
+    const idx = profiles.findIndex(p => p.uuid === uuid);
+    if (idx >= 0) profiles[idx] = userProfile;
+    else profiles.push(userProfile);
 
     await this._saveProfiles(profiles);
+    console.log(`[✔] Perfil offline creado: ${username}`);
     return userProfile;
   }
 
   /**
-   * Login genérico para elegir método.
-   * @param {string} username
-   * @param {string} password
-   * @param {boolean} useMicrosoft
-   * @returns {Promise<object>} userProfile
+   * Login genérico.
+   * @param {string} username 
+   * @param {string} password 
+   * @param {'microsoft' | 'mojang' | 'legacy'} provider 
+   * @returns {Promise<object>} Perfil de usuario autenticado
    */
-  async login(username, password, useMicrosoft = false) {
-    if (useMicrosoft) {
-      return this.loginMicrosoft(username, password);
-    } else {
-      return this.loginMojang(username, password);
+  async login(username, password, provider = 'legacy', email = null) {
+    switch (provider) {
+      case 'microsoft':
+        return this.loginMicrosoft(username, password, email);
+      case 'mojang':
+        console.log('[✖] Las cuentas Mojang ya no son soportadas.');
+        return this.loginMojang(username, password);
+      case 'legacy':
+        return this.loginLegacy(username);
+      default:
+        throw new Error(`[✖] Provider inválido: ${provider}`);
     }
   }
 

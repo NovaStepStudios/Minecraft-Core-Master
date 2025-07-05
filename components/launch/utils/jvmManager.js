@@ -57,17 +57,27 @@ class JVMManager {
    */
   static async #validate(p) {
     const isPath = p.includes(path.sep);
+
     if (isPath) {
       try {
-        await fs.access(p, fsSync.constants.X_OK);
+        // En Windows solo verificar existencia, no modo ejecutable
+        if (process.platform === "win32") {
+          await fs.access(p); // solo verifica que existe
+        } else {
+          await fs.access(p, fsSync.constants.X_OK);
+        }
       } catch {
         return false;
       }
     }
+
     return await new Promise(res => {
-      exec(`${p} -version`, err => res(!err));
+      // Poner comillas para rutas con espacios
+      const cmd = `"${p}" -version`;
+      exec(cmd, err => res(!err));
     });
   }
+
 
   /**
    * Genera una lista de posibles rutas/comandos donde encontrar Java.

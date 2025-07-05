@@ -1,10 +1,5 @@
 node_modules/
-minecraft/
-test/
 vscode/
 .minecraft/
 Minecraft/
-data/
-Test/
-.steplauncher/
-.StepLauncher/
+test/

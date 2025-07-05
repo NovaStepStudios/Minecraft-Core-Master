@@ -4,7 +4,6 @@ const path = require("path");
 const https = require("https");
 const os = require("os");
 const crypto = require("crypto");
-const unzipper = require("unzipper");
 const EventEmitter = require("events");
 
 class LibrariesDownloader extends EventEmitter {
@@ -13,99 +12,88 @@ class LibrariesDownloader extends EventEmitter {
     this.root = root;
     this.version = version;
     this.libDir = path.join(root, "libraries");
-    this.nativeRoot = path.join(root, "natives");
     this.concurrent = concurrency;
-    this.platform = (() => {
-      switch (os.platform()) {
-        case "win32": return "windows";
-        case "darwin": return "osx";
-        case "linux": return "linux";
-        default: return null;
-      }
-    })();
-    this.arch = (() => {
-      switch (os.arch()) {
-        case "x64": return "64";
-        case "arm64": return "arm64";
-        case "ia32": return "32";
-        default: return "64";
-      }
-    })();
+
+    this.platform = {
+      win32: "windows",
+      darwin: "osx",
+      linux: "linux"
+    }[os.platform()] || null;
+
+    this.arch = {
+      x64: "64",
+      arm64: "arm64",
+      ia32: "32"
+    }[os.arch()] || "64";
   }
-  static _sha1(file) {
-    return new Promise((res, rej) => {
+
+  static async _sha1(filePath) {
+    return new Promise((resolve, reject) => {
       const hash = crypto.createHash("sha1");
-      const s = fs.createReadStream(file);
-      s.on("error", rej);
-      s.on("data", d => hash.update(d));
-      s.on("end", () => res(hash.digest("hex")));
+      const stream = fs.createReadStream(filePath);
+      stream.on("error", reject);
+      stream.on("data", chunk => hash.update(chunk));
+      stream.on("end", () => resolve(hash.digest("hex")));
     });
   }
+
   async _download(url, dest, expectedSha1, attempt = 1) {
     await fsp.mkdir(path.dirname(dest), { recursive: true });
+
     if (fs.existsSync(dest) && expectedSha1) {
-      if ((await LibrariesDownloader._sha1(dest)) === expectedSha1) return;
-      await fsp.unlink(dest);
+      const actualSha = await LibrariesDownloader._sha1(dest);
+      if (actualSha === expectedSha1) {
+        this.emit("debug", `[LibrariesDownloader] ✔ Archivo válido encontrado: ${dest}`);
+        return; // No descargar si ya está bien
+      } else {
+        this.emit("debug", `[LibrariesDownloader] ⚠ SHA1 no coincide para ${dest}, re-descargando...`);
+        await fsp.unlink(dest);
+      }
     }
+
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(dest);
-      const request = https.get(url, res => {
+      https.get(url, res => {
         if (res.statusCode !== 200) {
           file.close();
-          fs.existsSync(dest) && fs.unlinkSync(dest);
-          if (attempt < 3) {
-            // Reintentar
-            return resolve(this._download(url, dest, expectedSha1, attempt + 1));
-          } else {
-            return reject(new Error(`HTTP ${res.statusCode} → ${url}`));
-          }
+          if (fs.existsSync(dest)) fs.unlinkSync(dest);
+          if (attempt < 3) return resolve(this._download(url, dest, expectedSha1, attempt + 1));
+          return reject(new Error(`HTTP ${res.statusCode} → ${url}`));
         }
+
         res.pipe(file);
+
         file.on("finish", async () => {
           file.close();
           if (expectedSha1) {
-            try {
-              const sha = await LibrariesDownloader._sha1(dest);
-              if (sha !== expectedSha1) {
-                await fsp.unlink(dest);
-                if (attempt < 3) {
-                  return resolve(this._download(url, dest, expectedSha1, attempt + 1));
-                } else {
-                  return reject(new Error(`SHA1 mismatch after download: ${url}`));
-                }
-              }
-            } catch (e) {
-              return reject(e);
+            const actualSha = await LibrariesDownloader._sha1(dest);
+            if (actualSha !== expectedSha1) {
+              await fsp.unlink(dest);
+              if (attempt < 3) return resolve(this._download(url, dest, expectedSha1, attempt + 1));
+              return reject(new Error(`SHA1 mismatch: ${url}`));
             }
           }
+          this.emit("debug", `[LibrariesDownloader] ✔ Descargado: ${dest}`);
           resolve();
         });
+
         file.on("error", async (err) => {
           file.close();
-          fs.existsSync(dest) && await fsp.unlink(dest);
+          if (fs.existsSync(dest)) await fsp.unlink(dest);
           reject(err);
         });
-      });
-      request.on("error", async (err) => {
+      }).on("error", async (err) => {
         file.close();
-        fs.existsSync(dest) && await fsp.unlink(dest);
+        if (fs.existsSync(dest)) await fsp.unlink(dest);
         reject(err);
       });
     });
   }
-  async _unzip(jar, dest) {
-    await fsp.mkdir(dest, { recursive: true });
-    return new Promise((resolve, reject) => {
-      fs.createReadStream(jar)
-        .pipe(unzipper.Extract({ path: dest }))
-        .on("close", resolve)
-        .on("error", reject);
-    });
-  }
+
   async _json(url) {
     return new Promise((resolve, reject) => {
       https.get(url, res => {
-        if (res.statusCode !== 200) return reject(Error(`HTTP ${res.statusCode}`));
+        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
         let data = "";
         res.on("data", c => data += c);
         res.on("end", () => {
@@ -118,34 +106,43 @@ class LibrariesDownloader extends EventEmitter {
       }).on("error", reject);
     });
   }
+
   async _loadVersionJSON() {
     const manifest = await this._json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json");
     const versionInfo = manifest.versions.find(v => v.id === this.version);
-    if (!versionInfo) throw Error(`Versión '${this.version}' no encontrada`);
+    if (!versionInfo) throw new Error(`Versión '${this.version}' no encontrada`);
     return this._json(versionInfo.url);
   }
+
   _allowed(lib) {
     if (!lib.rules) return true;
-    let allowed = false;
-    for (const r of lib.rules) {
-      if (r.os && r.os.name && r.os.name !== this.platform) continue;
-      allowed = r.action === "allow";
+    for (const rule of lib.rules) {
+      if (rule.os?.name && rule.os.name !== this.platform) continue;
+      return rule.action === "allow";
     }
-    return allowed;
+    return false;
   }
+
   _asNative(lib) {
-    if (lib.natives && lib.natives[this.platform]) {
+    if (lib.natives?.[this.platform]) {
       const key = lib.natives[this.platform].replace("${arch}", this.arch);
       return { classifier: key, legacy: false };
     }
-    const m = lib.name.match(/:natives-([a-zA-Z0-9_\-]+)$/);
-    if (m) return { classifier: null, legacy: true };
+    const match = lib.name.match(/:natives-([a-zA-Z0-9_\-]+)$/);
+    if (match) return { classifier: null, legacy: true };
     return null;
   }
+
   _destPath(lib, classifier = null) {
-    if (classifier) return path.join(this.libDir, lib.downloads.classifiers[classifier].path);
-    return path.join(this.libDir, lib.downloads.artifact.path);
+    if (classifier && lib.downloads.classifiers && lib.downloads.classifiers[classifier]) {
+      return path.join(this.libDir, lib.downloads.classifiers[classifier].path);
+    }
+    if (lib.downloads.artifact) {
+      return path.join(this.libDir, lib.downloads.artifact.path);
+    }
+    return null;
   }
+
   async _process(libs) {
     let done = 0;
     const total = libs.length;
@@ -158,35 +155,38 @@ class LibrariesDownloader extends EventEmitter {
       queue.shift();
       if (libs.length) push(task(libs.shift()));
     };
+
     const task = lib => async () => {
       try {
         const nfo = this._asNative(lib);
-        if (nfo && !nfo.legacy) {
+        const isNative = !!nfo;
+
+        let destJar, url, sha;
+        if (isNative && !nfo.legacy) {
           const cls = nfo.classifier;
-          const destJar = this._destPath(lib, cls);
-          const url = lib.downloads.classifiers[cls].url;
-          const sha = lib.downloads.classifiers[cls].sha1;
-          await this._download(url, destJar, sha);
-          const nativeDir = path.join(this.nativeRoot, this.version);
-          await this._unzip(destJar, nativeDir);
-        } else if (nfo && nfo.legacy) {
-          const destJar = this._destPath(lib);
-          const sha = lib.downloads.artifact.sha1;
-          await this._download(lib.downloads.artifact.url, destJar, sha);
-          const nativeDir = path.join(this.nativeRoot, this.version);
-          await this._unzip(destJar, nativeDir);
+          destJar = this._destPath(lib, cls);
+          url = lib.downloads.classifiers[cls].url;
+          sha = lib.downloads.classifiers[cls].sha1;
         } else {
-          const destJar = this._destPath(lib);
-          const sha = lib.downloads.artifact.sha1;
-          await this._download(lib.downloads.artifact.url, destJar, sha);
+          destJar = this._destPath(lib);
+          url = lib.downloads.artifact.url;
+          sha = lib.downloads.artifact.sha1;
         }
+
+        if (!destJar || !url) {
+          this.emit("debug", `[LibrariesDownloader] ⚠ Ruta o URL faltante para ${lib.name}, se omite.`);
+          return;
+        }
+
+        await this._download(url, destJar, sha);
       } catch (e) {
-        // No emitimos error para evitar spam
+        this.emit("debug", `[LibrariesDownloader] ⚠ Error descargando ${lib.name}: ${e.message}`);
       } finally {
         active--;
         next();
       }
     };
+
     const push = work => {
       queue.push(work);
       if (active < this.concurrent) {
@@ -194,10 +194,12 @@ class LibrariesDownloader extends EventEmitter {
         work();
       }
     };
+
     for (let i = 0; i < Math.min(this.concurrent, libs.length); i++) {
       push(task(libs.shift()));
     }
-    await new Promise((resolve) => {
+
+    await new Promise(resolve => {
       const interval = setInterval(() => {
         if (queue.length === 0 && active === 0) {
           clearInterval(interval);
@@ -206,18 +208,35 @@ class LibrariesDownloader extends EventEmitter {
       }, 100);
     });
   }
+
   async start() {
     try {
       await fsp.mkdir(this.libDir, { recursive: true });
-      await fsp.mkdir(this.nativeRoot, { recursive: true });
       const versionJson = await this._loadVersionJSON();
-      const allLibs = versionJson.libraries || [];
-      const libsFiltered = allLibs.filter(l => this._allowed(l));
-      await this._process(libsFiltered);
-      this.emit("done", "Todas las librerías descargadas / nativos extraídos");
+
+      // Corregir la ruta de launchwrapper SI existe en la lista
+      // Cambiar la ruta duplicada que da el JSON para launchwrapper
+      if (versionJson.libraries) {
+        for (const lib of versionJson.libraries) {
+          if (lib.name === "net.minecraft:launchwrapper:1.12" && lib.downloads.artifact) {
+            // Reemplazar la ruta incorrecta (launchwrapper/launchwrapper/1.12) por launchwrapper/1.12
+            const origPath = lib.downloads.artifact.path;
+            const fixedPath = origPath.replace(/launchwrapper\/launchwrapper\//, "launchwrapper/");
+            if (origPath !== fixedPath) {
+              this.emit("debug", `[LibrariesDownloader] Corrigiendo ruta launchwrapper: ${origPath} -> ${fixedPath}`);
+              lib.downloads.artifact.path = fixedPath;
+            }
+          }
+        }
+      }
+
+      const libs = (versionJson.libraries || []).filter(lib => this._allowed(lib));
+      await this._process(libs);
+      this.emit("done", "✅ Todas las librerías descargadas correctamente.");
     } catch (e) {
-      // No emitimos error para evitar spam
+      this.emit("error", e.message);
     }
   }
 }
+
 module.exports = (root, version, opts) => new LibrariesDownloader(root, version, opts);

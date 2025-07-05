@@ -8,161 +8,229 @@ class LibraryManager {
     this.root = root;
     this.versionData = versionData;
     this.platform = platform;
-    this.options = options;
+    this.options = {
+      debug: false,
+      forceExtract: false,
+      skipSha1Errors: true,
+      abortOnDownloadError: false,
+      maxDownloadRetries: 3,
+      ...options,
+    };
 
-    this.cache = new Map();
-    this.extractedNatives = new Set();
     this._checkedPaths = new Map();
     this._resolvedLibs = new Map();
+    this.extractedNatives = new Set(); // Importante que exista para evitar errores
   }
 
   _debug(...args) {
     if (this.options.debug) console.log("[LibraryManager]", ...args);
   }
 
-  _arch() {
-    const arch = process.arch;
-    return arch === "x64" || arch === "arm64" ? "64" : arch;
-  }
-
   async buildClasspath() {
-    const classpathPaths = [];
-    const extractionTasks = [];
+    const sep = process.platform === "win32" ? ";" : ":";
+    let libs = this.versionData.libraries || [];
+    const baseId = this.versionData.inheritsFrom;
+    const currentId = this.versionData.id;
+    const versionId = baseId || currentId;
 
-    for (const lib of this.versionData.libraries || []) {
-      if (!this._checkRules(lib)) continue;
-
-      const artifactPath = await this._resolveLibraryPath(lib);
-      if (artifactPath) classpathPaths.push(artifactPath);
-
-      if (lib.natives?.[this.platform]) {
-        extractionTasks.push(this._extractNative(lib));
+    if (baseId) {
+      const baseData = await this._loadVersionJson(baseId);
+      if (baseData?.libraries) {
+        libs = this._mergeLibraries(baseData.libraries, libs);
+        this._debug(`📚 Librerías combinadas de ${baseId} + ${currentId}`);
       }
     }
 
-    await Promise.all(extractionTasks);
+    // FILTRAR DUPLICADOS EXACTOS (mismo group:artifact:version)
+    const uniqueLibMap = new Map();
+    for (const lib of libs) {
+      if (!this._checkRules(lib)) continue;
+      if (!uniqueLibMap.has(lib.name)) {
+        uniqueLibMap.set(lib.name, lib);
+      } else {
+        this._debug(`🔹 Eliminado duplicado: ${lib.name}`);
+      }
+    }
+    libs = Array.from(uniqueLibMap.values());
 
-    const vId = this.versionData.id || this.versionData.inheritsFrom;
-    const clientJar = path.join(this.root, "versions", vId, `${vId}.jar`);
+    // ORDENAR: Forge primero, Guava segundo, resto luego
+    libs.sort((a, b) => {
+      const aName = a.name.toLowerCase();
+      const bName = b.name.toLowerCase();
+      if (aName.includes("net.minecraftforge")) return -1;
+      if (bName.includes("net.minecraftforge")) return 1;
+      if (aName.includes("com.google.guava:guava")) return -1;
+      if (bName.includes("com.google.guava:guava")) return 1;
+      return 0;
+    });
 
-    if (await this._exists(clientJar)) {
-      classpathPaths.push(clientJar);
+    // Validar localmente sin descargar
+    for (const lib of libs) {
+      const jar = await this._resolveLibraryPath(lib);
+      if (!jar) {
+        this._debug(`⚠️ Archivo faltante local para ${lib.name}`);
+        continue;
+      }
+
+      // Validar Forge específicamente
+      if (lib.name?.startsWith("net.minecraftforge:forge")) {
+        const hasTweaker = await this._jarHasClass(jar, "cpw/mods/fml/common/launcher/FMLTweaker.class");
+        if (!hasTweaker) {
+          this._debug(`❌ Forge inválido: falta FMLTweaker.class en ${jar}`);
+        } else {
+          this._debug(`✅ Forge válido con FMLTweaker.class en ${jar}`);
+        }
+      }
+    }
+
+    // Añadir client.jar al classpath
+    const jarPath = path.join(this.root, "versions", versionId, `${versionId}.jar`);
+    const classpathSet = new Set();
+
+    for (const lib of libs) {
+      const jar = await this._resolveLibraryPath(lib);
+      if (jar) classpathSet.add(jar);
+    }
+    if (await this._exists(jarPath)) {
+      classpathSet.add(jarPath);
     } else {
-      this._debug(`Jar cliente no encontrado: ${clientJar}`);
+      this._debug(`⚠️ No se encontró el client.jar: ${jarPath}`);
     }
 
-    const validPaths = [];
-    for (const p of classpathPaths) {
-      if (await this._exists(p)) validPaths.push(p);
-      else this._debug(`Librería omitida (no existe): ${p}`);
+    return [...classpathSet].join(sep);
+  }
+
+  _compareVersions(a, b) {
+    const pa = a.split(".").map(Number);
+    const pb = b.split(".").map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const na = pa[i] || 0;
+      const nb = pb[i] || 0;
+      if (na > nb) return 1;
+      if (na < nb) return -1;
+    }
+    return 0;
+  }
+  async extractNatives(destination) {
+    const libs = await this._getAllNativeLibs();
+    await fs.mkdir(destination, { recursive: true });
+
+    for (const lib of libs) {
+      const jarPath = await this._resolveLibraryPath(lib);
+      if (!jarPath) continue;
+
+      const zip = fsSync.createReadStream(jarPath).pipe(unzipper.Parse({ forceStream: true }));
+      for await (const entry of zip) {
+        if (entry.type === "File" && !entry.path.includes("META-INF") && entry.path.match(/\.(dll|so|dylib)$/)) {
+          const destPath = path.join(destination, path.basename(entry.path));
+          await fs.mkdir(path.dirname(destPath), { recursive: true });
+          await new Promise((res, rej) => {
+            entry.pipe(fsSync.createWriteStream(destPath)).on("close", res).on("error", rej);
+          });
+        } else {
+          entry.autodrain();
+        }
+      }
     }
 
-    this.cache.set(vId, validPaths);
-    const sep = process.platform === "win32" ? ";" : ":";
-    this._debug(`✔️ ${validPaths.length} librerías válidas encontradas.`);
-    return validPaths.join(sep);
+    this.extractedNatives.add(destination);
+    this._debug(`🧩 Nativos extraídos en: ${destination}`);
+  }
+
+  async _getAllNativeLibs() {
+    const libs = this.versionData.libraries || [];
+    const result = [];
+
+    for (const lib of libs) {
+      if (!this._checkRules(lib)) continue;
+      if (!lib.natives) continue;
+
+      const classifier = lib.natives[this.platform];
+      if (!classifier) continue;
+
+      // Cambia el artifact si tiene classifiers
+      lib.downloads = lib.downloads || {};
+      lib.downloads.artifact = lib.downloads.classifiers?.[classifier];
+      if (lib.downloads.artifact) result.push(lib);
+    }
+
+    return result;
   }
 
   async _resolveLibraryPath(lib) {
     if (this._resolvedLibs.has(lib.name)) return this._resolvedLibs.get(lib.name);
 
-    const downloadPath = lib.downloads?.artifact?.path;
-    if (downloadPath) {
-      const candidate = path.join(this.root, "libraries", downloadPath);
-      if (await this._exists(candidate)) {
-        this._resolvedLibs.set(lib.name, candidate);
-        return candidate;
-      }
+    let artifact = lib.downloads?.artifact;
+    if (!artifact || !artifact.path) {
+      artifact = this._reconstructArtifact(lib.name);
+      if (!artifact) return null;
     }
 
-    const [group, artifact, versionRaw] = lib.name.split(":");
-    if (!group || !artifact || !versionRaw) return null;
-
-    const groupPath = group.replace(/\./g, path.sep);
-    const jarName = `${artifact}-${versionRaw}.jar`;
-    const fullPath = path.join(this.root, "libraries", groupPath, artifact, versionRaw, jarName);
-
+    const fullPath = path.join(this.root, "libraries", artifact.path);
     if (await this._exists(fullPath)) {
       this._resolvedLibs.set(lib.name, fullPath);
       return fullPath;
     }
 
-    const cleanVersion = versionRaw.split("-")[0];
-    const fallbackJar = `${artifact}-${cleanVersion}.jar`;
-    const fallbackPath = path.join(this.root, "libraries", groupPath, artifact, cleanVersion, fallbackJar);
-
-    if (await this._exists(fallbackPath)) {
-      this._resolvedLibs.set(lib.name, fallbackPath);
-      return fallbackPath;
-    }
-
-    this._debug(`Archivo de librería no encontrado: ${lib.name}`);
     return null;
   }
 
-  async _extractNative(lib) {
-    let classifier = lib.natives[this.platform];
-    classifier = classifier.replace("${arch}", this._arch());
-    const nativePath = this._getClassifierPath(lib, classifier);
+  _reconstructArtifact(libName) {
+    const [group, artifactId, version] = libName.split(":");
+    if (!group || !artifactId || !version) return null;
 
-    if (this.extractedNatives.has(nativePath)) return;
-    if (!(await this._exists(nativePath))) return;
-
-    const id = this.versionData.id || this.versionData.inheritsFrom;
-    const extractDir = path.join(this.root, "natives", `${id}-${lib.name.replace(/[:.]/g, "_")}`);
-    const lockFile = path.join(extractDir, ".extracted");
-
-    if (!this.options.forceExtract && await this._exists(lockFile)) {
-      this._debug(`Nativo ya marcado como extraído: ${extractDir}`);
-      this.extractedNatives.add(nativePath);
-      return;
-    }
-
-    await fs.mkdir(extractDir, { recursive: true });
-    this._debug(`Extrayendo nativo: ${nativePath} → ${extractDir}`);
-
-    await new Promise((resolve, reject) => {
-      fsSync.createReadStream(nativePath)
-        .pipe(unzipper.Extract({ path: extractDir }))
-        .on("close", resolve)
-        .on("error", reject);
-    });
-
-    await fs.writeFile(lockFile, "ok");
-    this.extractedNatives.add(nativePath);
-    this._debug(`Extracción completada: ${extractDir}`);
-  }
-
-  _getClassifierPath(lib, classifier) {
-    const classifierPath = lib.downloads?.classifiers?.[classifier]?.path;
-    if (classifierPath) {
-      return path.join(this.root, "libraries", classifierPath);
-    }
-
-    const [group, artifact, version] = lib.name.split(":");
-    const groupPath = group.replace(/\./g, path.sep);
-    const jarName = `${artifact}-${version}-${classifier}.jar`;
-    return path.join(this.root, "libraries", groupPath, artifact, version, jarName);
+    const pathUrl = `${group.replace(/\./g, "/")}/${artifactId}/${version}/${artifactId}-${version}.jar`;
+    return {
+      url: `https://libraries.minecraft.net/${pathUrl}`, // solo referencia, no descarga
+      path: pathUrl,
+    };
   }
 
   _checkRules(lib) {
-    if (!lib.rules || lib.rules.length === 0) return true;
-    return lib.rules.reduce((allowed, rule) => {
-      if (!rule.os || rule.os.name === this.platform) {
-        return rule.action === "allow";
-      }
-      return allowed;
-    }, false);
+    if (!lib.rules) return true;
+    return lib.rules.some(rule => {
+      const matchOS = !rule.os || rule.os.name === this.platform;
+      return matchOS && rule.action === "allow";
+    });
   }
 
-  async _exists(filePath) {
-    if (this._checkedPaths.has(filePath)) return this._checkedPaths.get(filePath);
+  async _exists(file) {
+    if (this._checkedPaths.has(file)) return this._checkedPaths.get(file);
     try {
-      await fs.access(filePath);
-      this._checkedPaths.set(filePath, true);
+      await fs.access(file);
+      this._checkedPaths.set(file, true);
       return true;
     } catch {
-      this._checkedPaths.set(filePath, false);
+      this._checkedPaths.set(file, false);
+      return false;
+    }
+  }
+
+  async _loadVersionJson(versionId) {
+    const file = path.join(this.root, "versions", versionId, `${versionId}.json`);
+    try {
+      const content = await fs.readFile(file, "utf-8");
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+
+  _mergeLibraries(base, current) {
+    const names = new Set(base.map(l => l.name));
+    return [...base, ...current.filter(l => !names.has(l.name))];
+  }
+
+  async _jarHasClass(jarPath, className) {
+    try {
+      const zip = fsSync.createReadStream(jarPath).pipe(unzipper.Parse({ forceStream: true }));
+      for await (const entry of zip) {
+        if (entry.path === className) return true;
+        entry.autodrain();
+      }
+      return false;
+    } catch (err) {
+      this._debug(`❌ Error inspeccionando ${jarPath}: ${err.message}`);
       return false;
     }
   }
