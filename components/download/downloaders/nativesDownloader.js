@@ -34,10 +34,15 @@ class NativesDownloader extends EventEmitter {
   }
 
   async start() {
-    if (this.platform === "unknown") return this.emit("error", "🛑 Plataforma no reconocida.");
+    if (this.platform === "unknown") {
+      this.emit("error", "🛑 Plataforma no reconocida.");
+      return;
+    }
+
     try {
       await fs.promises.mkdir(this.nativesPath, { recursive: true });
 
+      // Obtener manifest y versión
       const manifest = await this.#fetchJSON("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json");
       const versionMeta = manifest.versions.find(v => v.id === this.version);
       if (!versionMeta) throw new Error(`Versión '${this.version}' no encontrada.`);
@@ -45,21 +50,20 @@ class NativesDownloader extends EventEmitter {
       const versionData = await this.#fetchJSON(versionMeta.url);
       const libraries = versionData.libraries || [];
 
-      for (const lib of libraries) {
-        const name = lib.name || "";
-        if (!lib.downloads?.artifact) continue;
-        if (!this.#rulesAllow(lib.rules)) continue;
+      // Detectar si la versión es antigua o moderna:
+      // Antiguo: tienen classifiers con claves fijas y natives mapeando esas claves (ej: 1.7.10, 1.8.9)
+      // Moderno: nativos usan claves con ${arch} o solo classifier directo (ej: 1.16+)
 
-        const nativeName = `natives-${this.platform}`;
-        const nativeArchName = `natives-${this.platform}-${this.arch}`;
+      const isOldVersion = libraries.some(lib =>
+        lib.natives && lib.downloads && lib.downloads.classifiers && typeof lib.natives === "object"
+      );
 
-        if (name.includes(nativeName)) {
-          if (name.includes(nativeArchName) || !name.includes("natives-" + this.platform + "-")) {
-            lib._artifact = lib.downloads.artifact;
-            this.queue.push(lib);
-            this.totalBytes += lib._artifact.size || 0;
-          }
-        }
+      if (isOldVersion) {
+        this.emit("debug", "🧠 Versión antigua detectada, usando método viejo para nativos");
+        this.#queueOldNatives(libraries);
+      } else {
+        this.emit("debug", "🧠 Versión moderna detectada, usando método moderno para nativos");
+        this.#queueModernNatives(libraries);
       }
 
       if (this.queue.length === 0) {
@@ -78,15 +82,51 @@ class NativesDownloader extends EventEmitter {
     }
   }
 
-  #resolveNativeArtifact(lib) {
-    if (!lib.downloads?.artifact || !lib.name.includes(":natives-")) return null;
-    if (!this.#rulesAllow(lib.rules)) return null;
+  #queueOldNatives(libraries) {
+    for (const lib of libraries) {
+      if (!this.#rulesAllow(lib.rules)) continue;
+      if (!lib.natives || !lib.downloads?.classifiers) continue;
 
-    const nameParts = lib.name.split(":");
-    const classifier = nameParts[nameParts.length - 1];
-    const isMatching = classifier.includes(this.platform) && classifier.includes(this.arch);
+      const nativeKey = lib.natives[this.platform];
+      if (!nativeKey) continue;
 
-    return isMatching ? lib.downloads.artifact : null;
+      const artifact = lib.downloads.classifiers[nativeKey];
+      if (!artifact) continue;
+
+      lib._artifact = artifact;
+      lib._extractExclude = lib.extract?.exclude || [];
+      this.queue.push(lib);
+      this.totalBytes += artifact.size || 0;
+
+      this.emit("debug", `✅ Añadido nativo (antiguo): ${lib.name} → ${nativeKey}`);
+    }
+  }
+
+  #queueModernNatives(libraries) {
+    for (const lib of libraries) {
+      if (!this.#rulesAllow(lib.rules)) continue;
+      if (!lib.natives || !lib.downloads?.classifiers) continue;
+
+      // Clave posible con arch, o solo platform
+      let nativeTemplate = lib.natives[this.platform];
+      if (!nativeTemplate) continue;
+
+      // Sustituir ${arch} si existe
+      const keys = nativeTemplate.includes("${arch}")
+        ? [this.arch, "x64", "x86"].map(a => nativeTemplate.replace("${arch}", a))
+        : [nativeTemplate];
+
+      // Buscar primer classifier válido en keys
+      const key = keys.find(k => lib.downloads.classifiers[k]);
+      if (!key) continue;
+
+      lib._artifact = lib.downloads.classifiers[key];
+      lib._extractExclude = lib.extract?.exclude || [];
+      this.queue.push(lib);
+      this.totalBytes += lib._artifact.size || 0;
+
+      this.emit("debug", `✅ Añadido nativo (moderno): ${lib.name} → ${key}`);
+    }
   }
 
   #rulesAllow(rules = []) {
@@ -123,7 +163,7 @@ class NativesDownloader extends EventEmitter {
     }
 
     this.emit("debug", `📦 Extrayendo ${dest}`);
-    await this.#extract(dest, this.nativesPath);
+    await this.#extract(dest, this.nativesPath, lib._extractExclude);
     this.#emitProgress();
   }
 
@@ -158,19 +198,28 @@ class NativesDownloader extends EventEmitter {
         res.pipe(file);
         file.on("finish", () => file.close(resolve));
         file.on("error", reject);
-      }).on("error", reject).setTimeout(this.timeout, () => reject(new Error("Timeout")));
+      }).on("error", err => {
+        fs.existsSync(dest) && fs.unlinkSync(dest);
+        reject(err);
+      }).setTimeout(this.timeout, () => reject(new Error("Timeout")));
     });
   }
 
-  async #extract(zipFile, targetDir) {
+  async #extract(zipFile, targetDir, exclude = []) {
     const stream = fs.createReadStream(zipFile).pipe(unzipper.Parse());
     const tasks = [];
 
     stream.on("entry", entry => {
-      if (entry.type === "Directory" || entry.path.includes("META-INF")) {
+      if (entry.type === "Directory") {
         entry.autodrain();
         return;
       }
+
+      if (exclude.some(ex => entry.path.startsWith(ex))) {
+        entry.autodrain();
+        return;
+      }
+
       const outPath = path.join(targetDir, path.basename(entry.path));
       const task = new Promise((res, rej) => {
         const writer = fs.createWriteStream(outPath);
