@@ -1,6 +1,6 @@
 {
   "name": "minecraft-core-master",
-  "version": "4.4.8",
+  "version": "4.5.8",
   "description": "Minecraft-core-master is a powerful JavaScript library that allows you to easily download official Minecraft versions, including all necessary libraries, assets, and native files, directly from Mojang servers. Additionally, it supports launching Minecraft with customizable options such as memory allocation, window size, version selection, and user profiles, making it ideal for integrating Minecraft into Node.js and Electron applications.",
   "type": "commonjs",
   "keywords": [

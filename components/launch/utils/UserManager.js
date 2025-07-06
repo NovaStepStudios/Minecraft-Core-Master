@@ -25,6 +25,7 @@ class UserManager {
     this._profilesCache = null;
     this.msAuthenticator = new AuthenticatorMicrosoft();
   }
+
   async validateAccessToken(profile) {
     if (!profile || !profile.accessToken) return false;
   
@@ -49,7 +50,7 @@ class UserManager {
         try {
           const newProfile = await this.msAuthenticator.refresh(profile);
           if (newProfile) {
-            await this._saveUpdatedProfile(newProfile);
+            await this._saveOrUpdateUserProfile(newProfile);
             console.log('[✔] Token Microsoft refrescado');
             return newProfile;
           }
@@ -63,25 +64,30 @@ class UserManager {
     return null;
   }
   
-  async _saveUpdatedProfile(profile) {
-    const profiles = await this._loadProfiles();
-    const idx = profiles.findIndex(p => p.uuid === profile.uuid);
-    if (idx >= 0) profiles[idx] = profile;
-    else profiles.push(profile);
-    await this._saveProfiles(profiles);
-  }
-  
   async _loadProfiles() {
     if (this._profilesCache) return this._profilesCache;
 
     try {
       const data = await fs.readFile(this.profilesPath, 'utf-8');
       const parsed = JSON.parse(data);
-      this._profilesCache = Array.isArray(parsed)
-        ? parsed
-        : Object.values(parsed.profiles || {});
+      if (!parsed || typeof parsed !== 'object' || !parsed.profiles) {
+        // Si no tiene estructura correcta, crear base
+        this._profilesCache = {
+          clientToken: crypto.randomUUID(),
+          profiles: {},
+          authenticationDatabase: {},
+          selectedUser: null,
+        };
+      } else {
+        this._profilesCache = parsed;
+      }
     } catch {
-      this._profilesCache = [];
+      this._profilesCache = {
+        clientToken: crypto.randomUUID(),
+        profiles: {},
+        authenticationDatabase: {},
+        selectedUser: null,
+      };
     }
 
     return this._profilesCache;
@@ -92,22 +98,72 @@ class UserManager {
     await fs.writeFile(this.profilesPath, JSON.stringify(profiles, null, 2), 'utf-8');
   }
 
+  async _saveOrUpdateUserProfile(userProfile) {
+    const profilesData = await this._loadProfiles();
+
+    if (!profilesData.clientToken) {
+      profilesData.clientToken = crypto.randomUUID();
+    }
+
+    profilesData.profiles[userProfile.uuid] = {
+      name: userProfile.name,
+      type: userProfile.type,
+    };
+
+    profilesData.authenticationDatabase[userProfile.uuid] = {
+      accessToken: userProfile.accessToken,
+      uuid: userProfile.uuid,
+      userProperties: userProfile.user_properties || '{}',
+      displayName: userProfile.name,
+      type: userProfile.type,
+    };
+
+    profilesData.selectedUser = userProfile.uuid;
+
+    await this._saveProfiles(profilesData);
+  }
+
   async resolve(user) {
     if (user?.uuid && user?.accessToken) return user;
 
-    const profiles = await this._loadProfiles();
-    const existingLegacy = profiles.find(p => p.uuid && p.type === 'legacy');
-    if (existingLegacy) return existingLegacy;
+    const profilesData = await this._loadProfiles();
+    const legacyUuid = Object.keys(profilesData.profiles).find(uuid => profilesData.profiles[uuid].type === 'legacy');
+    if (legacyUuid) {
+      const p = profilesData.profiles[legacyUuid];
+      return {
+        uuid: legacyUuid,
+        name: p.name,
+        type: 'legacy',
+        accessToken: '',
+      };
+    }
 
+    const newUuid = crypto.randomUUID();
     const newUser = {
       type: 'legacy',
       name: 'Player',
-      uuid: crypto.randomUUID(),
-      accessToken: ''
+      uuid: newUuid,
+      accessToken: '',
+      user_properties: '{}',
     };
 
-    profiles.push(newUser);
-    await this._saveProfiles(profiles);
+    // Añadir nuevo perfil
+    profilesData.profiles[newUuid] = {
+      name: newUser.name,
+      type: newUser.type,
+    };
+
+    profilesData.authenticationDatabase[newUuid] = {
+      accessToken: '',
+      uuid: newUuid,
+      userProperties: '{}',
+      displayName: newUser.name,
+      type: newUser.type,
+    };
+
+    profilesData.selectedUser = newUuid;
+
+    await this._saveProfiles(profilesData);
 
     return newUser;
   }
@@ -117,18 +173,17 @@ class UserManager {
   
     console.log(`[Auth] Iniciando sesión Mojang para ${username}...`);
   
-    // Intentar cargar perfiles existentes para obtener clientToken guardado
-    const profiles = await this._loadProfiles();
-    let existingProfile = profiles.find(p => p.name === username && p.type === 'mojang');
-    let clientToken;
-  
-    if (existingProfile && existingProfile.clientToken) {
-      clientToken = existingProfile.clientToken;
-    } else {
-      // Generar nuevo clientToken único y persistente
-      clientToken = crypto.randomUUID();
+    const profilesData = await this._loadProfiles();
+    let existingProfile = Object.entries(profilesData.profiles)
+      .find(([, p]) => p.name === username && p.type === 'mojang');
+
+    let clientToken = profilesData.clientToken || crypto.randomUUID();
+    if (existingProfile) {
+      const [uuid] = existingProfile;
+      const authData = profilesData.authenticationDatabase[uuid];
+      if (authData && authData.accessToken) clientToken = authData.accessToken;
     }
-  
+
     const res = await fetch(MOJANG_AUTH_URL, {
       method: 'POST',
       headers: {
@@ -143,33 +198,29 @@ class UserManager {
         requestUser: true
       })
     });
-  
+
     const text = await res.text();
     if (!text) throw new Error('[✖] Respuesta vacía de Mojang');
-  
+
     let json;
     try {
       json = JSON.parse(text);
     } catch (err) {
       throw new Error(`[✖] Error parseando respuesta Mojang: ${err.message}`);
     }
-  
+
     if (json.error) throw new Error(`[✖] ${json.errorMessage || json.error}`);
-  
+
     const userProfile = {
       uuid: json.selectedProfile?.id,
       name: json.selectedProfile?.name,
       accessToken: json.accessToken,
-      clientToken: json.clientToken || clientToken, // asegurar clientToken guardado
+      clientToken: json.clientToken || clientToken,
       user_properties: parseProps(json.user?.properties),
       type: 'mojang'
     };
-  
-    const idx = profiles.findIndex(p => p.uuid === userProfile.uuid);
-    if (idx >= 0) profiles[idx] = userProfile;
-    else profiles.push(userProfile);
-  
-    await this._saveProfiles(profiles);
+
+    await this._saveOrUpdateUserProfile(userProfile);
     console.log(`[✔] Login exitoso Mojang: ${userProfile.name}`);
     return userProfile;
   }  
@@ -184,19 +235,14 @@ class UserManager {
     const userProfile = {
       uuid: msProfile.id,
       name: msProfile.name || username,
-      email,  // guardamos el email en el perfil
+      email,
       accessToken: msProfile.access_token,
       clientToken: msProfile.access_token,
       user_properties: '{}',
       type: 'microsoft'
     };
-  
-    const profiles = await this._loadProfiles();
-    const idx = profiles.findIndex(p => p.uuid === userProfile.uuid);
-    if (idx >= 0) profiles[idx] = userProfile;
-    else profiles.push(userProfile);
-  
-    await this._saveProfiles(profiles);
+
+    await this._saveOrUpdateUserProfile(userProfile);
     console.log(`[✔] Login exitoso Microsoft: ${userProfile.name}`);
     return userProfile;
   }
@@ -216,23 +262,11 @@ class UserManager {
       type: 'legacy'
     };
 
-    const profiles = await this._loadProfiles();
-    const idx = profiles.findIndex(p => p.uuid === uuid);
-    if (idx >= 0) profiles[idx] = userProfile;
-    else profiles.push(userProfile);
-
-    await this._saveProfiles(profiles);
+    await this._saveOrUpdateUserProfile(userProfile);
     console.log(`[✔] Perfil offline creado: ${username}`);
     return userProfile;
   }
 
-  /**
-   * Login genérico.
-   * @param {string} username 
-   * @param {string} password 
-   * @param {'microsoft' | 'mojang' | 'legacy'} provider 
-   * @returns {Promise<object>} Perfil de usuario autenticado
-   */
   async login(username, password, provider = 'legacy', email = null) {
     switch (provider) {
       case 'microsoft':

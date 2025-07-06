@@ -9,11 +9,11 @@ const createLibrariesDownloader = require("./downloaders/librariesDownloader.js"
 const createNativesDownloader   = require("./downloaders/nativesDownloader.js");
 const JVMDownloader             = require("./downloaders/jvmDownloader.js");
 const JavaRuntimeFinder         = require("./downloaders/jvmOficial.js");
+const { verifyVersion }         = require("./downloaders/patch.js");
 
 class MinecraftDownloader extends EventEmitter {
   constructor(rootPath, javaVer = "auto", releaseType = "release", concurrency = 5) {
     super();
-
     this.rootPath = rootPath;
     this.javaVer = javaVer;
     this.releaseType = releaseType;
@@ -86,7 +86,7 @@ class MinecraftDownloader extends EventEmitter {
       const errorMsg = `Error en descarga de ${name}: ${err.message || err}`;
       this.emit("error", errorMsg);
       await this._appendErrorLog(version, errorMsg);
-      throw err;  // Rethrow para parar proceso si querés
+      throw err;  // Puedes quitar el throw si no quieres que se detenga
     }
   }
 
@@ -95,7 +95,6 @@ class MinecraftDownloader extends EventEmitter {
       let javaVersionToUse = this.javaVer;
       let skipJvmDownloader = false;
 
-      // Si javaVer es "auto", usa JavaRuntimeFinder para encontrar o descargar JVM
       if (javaVersionToUse === "auto") {
         const finder = new JavaRuntimeFinder(this.rootPath, version);
         finder.on("progress", msg => this.emit("progress", `[JVM] ${msg}`));
@@ -125,7 +124,6 @@ class MinecraftDownloader extends EventEmitter {
         this.emit("progress", this._formatGlobalProgress("jvm", "100%"));
       }
 
-      // Descarga JVM si no fue saltado
       if (!skipJvmDownloader && (typeof javaVersionToUse === "string" || javaVersionToUse?.files)) {
         await this._runDownloader(`Java ${javaVersionToUse.version?.name || javaVersionToUse}`, version, async () => {
           const jvm = new JVMDownloader(this.rootPath, javaVersionToUse);
@@ -136,7 +134,6 @@ class MinecraftDownloader extends EventEmitter {
         this.emit("warn", "No se pudo determinar la versión de Java para descargar.");
       }
 
-      // Descargas principales
       await this._runDownloader("nativos", version, async () => {
         const natives = createNativesDownloader(this.rootPath, version, { concurrency: this.concurrency });
         this._attachCommonListeners(natives, "natives", version);
@@ -160,6 +157,16 @@ class MinecraftDownloader extends EventEmitter {
         this._attachCommonListeners(client, "client", version);
         await client.start();
       });
+
+      // Aquí la integración: verificamos todo luego de descargar el cliente
+      try {
+        this.emit("progress", "Verificando instalación completa...");
+        await verifyVersion(this.rootPath, version);
+        this.emit("progress", "Verificación completada con éxito.");
+      } catch (verErr) {
+        this.emit("error", `Error durante la verificación: ${verErr.message || verErr}`);
+        await this._appendErrorLog(version, `Error durante verificación: ${verErr.message || verErr}`);
+      }
 
       this.emit("progress", `Minecraft ${version} descargado (100%)`);
       this.emit("done", `✅ Minecraft ${version} descargado correctamente.`);

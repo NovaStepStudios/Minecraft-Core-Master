@@ -4,13 +4,17 @@ const fs = require("fs/promises");
 
 class LaunchArgumentBuilder {
   constructor(options) {
+    const root = resolve(options.root || "./minecraft");
+    const versionId = options.versionFile?.id || options.versionFile?.inheritsFrom || "unknown";
+
     this.opts = {
-      root: resolve(options.root || "./minecraft"),
+      root,
       memory: options.memory || { max: "2G", min: "1G" },
-      gameDirectory: options.overrides?.gameDirectory || resolve(options.root || "./minecraft"),
+      gameDirectory: options.overrides?.gameDirectory || root,
       jvm: [],
       mcArgs: [],
-      ...options
+      nativePath: options.nativePath || join(root, "natives", versionId),
+      ...options,
     };
 
     this.versionFile = this.opts.versionFile;
@@ -27,7 +31,7 @@ class LaunchArgumentBuilder {
       const text = out.stderr || out.stdout || "";
       const match = text.match(/version "(?:(\d+)(?:\.(\d+))?)"/);
       this._javaMajorCache = match
-        ? match[1] === "1" ? parseInt(match[2]) : parseInt(match[1])
+        ? (match[1] === "1" ? parseInt(match[2], 10) : parseInt(match[1], 10))
         : 8;
     } catch {
       this._javaMajorCache = 8;
@@ -36,7 +40,7 @@ class LaunchArgumentBuilder {
   }
 
   #isLegacy(versionId) {
-    const [major, minor, patch] = versionId.split(".").map(n => parseInt(n) || 0);
+    const [major, minor, patch] = versionId.split(".").map(n => parseInt(n, 10) || 0);
     return major < 1 || (major === 1 && minor < 6) || (major === 1 && minor === 6 && patch < 1);
   }
 
@@ -97,7 +101,7 @@ class LaunchArgumentBuilder {
       "${resolution_height}": this.opts.window?.height || 482,
       "${library_directory}": join(this.opts.gameDirectory, "libraries").split(sep).join("/"),
       "${classpath_separator}": process.platform === "win32" ? ";" : ":",
-      "${natives_directory}": this.nativePath,
+      "${natives_directory}": this.nativePath.replace(/\\/g, "/"),
       "${classpath}": this.classPath,
     };
   }
@@ -105,12 +109,12 @@ class LaunchArgumentBuilder {
   #buildJvmFlags() {
     const major = this.#javaMajor(this.opts.javaPath);
 
-    const memory = [
+    const memoryFlags = [
       `-Xmx${this.opts.memory.max}`,
       `-Xms${this.opts.memory.min}`,
     ];
 
-    const gc = [
+    const gcFlags = [
       "-XX:+UseG1GC",
       "-XX:+UnlockExperimentalVMOptions",
       "-XX:+DisableExplicitGC",
@@ -118,35 +122,35 @@ class LaunchArgumentBuilder {
       "-XX:G1ReservePercent=15",
       "-XX:MaxGCPauseMillis=40",
       "-XX:G1HeapRegionSize=16M",
-      "-XX:+AlwaysPreTouch"
+      "-XX:+AlwaysPreTouch",
     ];
 
-    const performance = [
+    const perfFlags = [
       "-Dsun.rmi.dgc.server.gcInterval=2147483646",
       "-Dsun.rmi.dgc.client.gcInterval=2147483646",
       "-Djava.awt.headless=true",
-      "-Dfile.encoding=UTF-8"
+      "-Dfile.encoding=UTF-8",
+      `-Djava.library.path=${this.nativePath.replace(/\\/g, "/")}`,
     ];
 
-    const compat = [
-      `-Djava.library.path=${this.nativePath}`,
-      "-cp", this.classPath
-    ];
+    const addOpensFlags = major >= 17 ? [
+      "--add-opens", "java.base/sun.security.util=ALL-UNNAMED",
+      "--add-opens", "java.base/java.util=ALL-UNNAMED",
+      "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+      "--add-opens", "java.base/java.io=ALL-UNNAMED",
+    ] : [];
 
-    const access = (major >= 19) ? ["--enable-native-access=ALL-UNNAMED"] : [];
-
-    const custom = [
-      ...this.customFile?.arguments?.jvm || [],
-      ...this.opts.jvm
+    const customFlags = [
+      ...(this.customFile?.arguments?.jvm || []),
+      ...this.opts.jvm,
     ];
 
     return [
-      ...memory,
-      ...gc,
-      ...performance,
-      ...access,
-      ...compat,
-      ...custom,
+      ...memoryFlags,
+      ...gcFlags,
+      ...perfFlags,
+      ...addOpensFlags,
+      ...customFlags,
     ];
   }
 
@@ -166,7 +170,31 @@ class LaunchArgumentBuilder {
       args = [...this.customFile.arguments.game];
     }
 
-    // ⚠️ Si es Forge con LaunchWrapper y no tiene --tweakClass, lo agregamos
+    const gameDir = this.opts.gameDirectory;
+    const assetsDir = join(gameDir, "assets");
+    const versionId = this.versionFile.id || this.versionFile.inheritsFrom || "unknown";
+    const assetIndex = this.opts.overrides?.assetIndex
+      || this.opts.version?.assetIndex?.id
+      || this.opts.version?.number
+      || "legacy";
+
+    const auth = this.opts.authorization || {};
+    const username = auth.name || "Player";
+    const uuid = auth.uuid || "00000000-0000-0000-0000-000000000000";
+    const accessToken = auth.access_token || "0";
+    const userType = auth.meta?.type || "legacy";
+    const versionType = this.opts.version?.type || "release";
+
+    if (!args.includes("--gameDir")) args.push("--gameDir", gameDir);
+    if (!args.includes("--assetsDir")) args.push("--assetsDir", assetsDir);
+    if (!args.includes("--version")) args.push("--version", versionId);
+    if (!args.includes("--assetIndex")) args.push("--assetIndex", assetIndex);
+    if (!args.includes("--username")) args.push("--username", username);
+    if (!args.includes("--uuid")) args.push("--uuid", uuid);
+    if (!args.includes("--accessToken")) args.push("--accessToken", accessToken);
+    if (!args.includes("--userType")) args.push("--userType", userType);
+    if (!args.includes("--versionType")) args.push("--versionType", versionType);
+
     if (
       mainClass === "net.minecraft.launchwrapper.Launch" &&
       !args.includes("--tweakClass")
@@ -179,9 +207,9 @@ class LaunchArgumentBuilder {
     }
 
     args.push(...this.opts.mcArgs);
+
     return { mainClass, args };
   }
-
 
   async build() {
     const major = this.#javaMajor(this.opts.javaPath);
@@ -194,23 +222,35 @@ class LaunchArgumentBuilder {
     const clientJar = await this.#resolveClientJar();
     if (!clientJar) throw new Error("No se encontró el .jar del cliente.");
 
-    const separator = process.platform === "win32" ? ";" : ":";
-    const cpSet = new Set(this.classPath.split(separator).filter(Boolean));
+    const sepChar = process.platform === "win32" ? ";" : ":";
+    const cpSet = new Set(this.classPath.split(sepChar).filter(Boolean));
     cpSet.add(clientJar);
-    this.classPath = [...cpSet].join(separator);
+    this.classPath = [...cpSet].join(sepChar);
 
     const placeholders = this.#placeholders();
-    const jvm = this.#buildJvmFlags();
-    const { mainClass: mc, args } = this.#buildGameArgs();
+    const jvmFlags = this.#buildJvmFlags();
+    const { mainClass: mcClass, args: gameArgs } = this.#buildGameArgs();
 
-    const argv = [
+    const finalArgs = [
       this.opts.javaPath,
-      ...jvm,
-      mc,
-      ...args
-    ].map(arg => typeof arg === "string"
-      ? arg.replace(/\$\{[^}]+\}/g, m => placeholders[m] ?? m)
-      : arg);
+      ...jvmFlags,
+      "-cp",
+      this.classPath,
+      mcClass,
+      ...gameArgs,
+    ];
+
+    const argv = finalArgs.map(arg =>
+      typeof arg === "string"
+        ? arg.replace(/\$\{[^}]+\}/g, m => placeholders[m] ?? m)
+        : arg
+    );
+
+    if (this.opts.debug) {
+      console.log("> ARGUMENTOS JVM:", argv.slice(1, argv.indexOf(mcClass)).join(" "));
+      console.log("> CLASSPATH:", this.classPath);
+      console.log("> NATIVES PATH:", this.nativePath);
+    }
 
     return argv;
   }

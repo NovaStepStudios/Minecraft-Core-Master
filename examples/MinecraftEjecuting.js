@@ -5,17 +5,14 @@ const { MinecraftExecutor } = require("../index");
 
   await executor.start({
     root: "./Minecraft",
-    javaPath: "/home/stepnickasantiago/Escritorio/Projects/Minecraft-Core-Master/Minecraft/runtime/Java24/bin/java",
+    javaPath: "java",
     memory: { max: "6G", min: "1G" },
-    window: { width: 854, height: 480, fullscreen: false },
-    version: { versionID: "1.21.6", type: "release" },
+    version: { versionID: "1.21.7", type: "release" },
     authenticator: {
       username: "Stepnicka012",
-      password: "StepnickaSantiago012"
+      password: "Santiago012"
     },
-    //jvm: [],               // Opcional, flags JVM extras
-    // mcArgs: [],         // Opcional, argumentos Minecraft extras
-    debug: false,          // Opcional, activa logs detallados
+    debug: true,
   });
 
   executor.on("data", (data) => console.log("[MC STDOUT]", data));
