@@ -1,4 +1,6 @@
 ![npm](./docs/icon.png)
+[![npm version](https://img.shields.io/npm/v/minecraft-core-master.svg)](https://www.npmjs.com/package/minecraft-core-master)
+[![npm downloads](https://img.shields.io/npm/dt/minecraft-core-master.svg)](https://www.npmjs.com/package/minecraft-core-master)
 
 # Minecraft-Core-Master
 
