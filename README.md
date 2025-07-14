@@ -8,22 +8,20 @@ Desarrollado por **NovaStep Studios** con un enfoque en rendimiento, control tot
 
 Soporte : [StepLauncher](https://discord.gg/YAqpTWQByM)
 
-Canal : [StepLauncher-MC](https://www.youtube.com/@steplauncher-mc)
-
-Instagram : [StepnickaST](http://instagram.com/stepnickast)
-
 ---
 ## Instalacion
 
 Instalacion `npm i minecraft-core-master`
 
-Dependencias que utiliza : **axios, adm-zip, cheerio, node-fecth, tar, unzipper, uuid, request, open**
+Dependencias que utiliza : **node-fetch, p-limit, tar, unzipper, uuid**
 
 
 ## 🚀 Componentes principales
 
 
 ### 🧩 `MinecraftDownloader`
+
+![npm](./docs/multi-version.webp)
 
 Clase que descarga todos los recursos necesarios para ejecutar Minecraft:
 
@@ -36,31 +34,37 @@ Clase que descarga todos los recursos necesarios para ejecutar Minecraft:
 #### 🧪 Uso básico
 
 ```js
-const path = require("path");
-const { MinecraftDownloader } = require("minecraft-core-master");
+const MinecraftDownloader = require("../components/downloader/main");
 
-const downloader = new MinecraftDownloader(path.join(__dirname, "minecraft"), "auto", "release");
+const Download = new MinecraftDownloader();
 
-downloader.on("progress", (msg) => console.log("[PROGRESO]", msg));
-downloader.on("done", (msg) => console.log("[✔]", msg));
-downloader.on("error", (err) => console.error("[❌]", err));
+Download.on("progress", ({ current, stepPercent, totalPercent }) => {
+  console.log(`🔄 ${current}: ${stepPercent}% | Total: ${totalPercent}%`);
+});
 
-(async () => {
-  try {
-    await downloader.start("1.20.4");
-    console.log("✅ Descarga completada.");
-  } catch (e) {
-    console.error("❌ Error en la descarga:", e);
-  }
-})();
+Download.on("step-done", name => {
+  console.log(`✅ ${name} completado.`);
+});
+
+Download.on("done", () => {
+  console.log("🎉 Todo listo para lanzar el juego!");
+});
+
+Download.on("error", err => {
+  console.error("❌ Error:", err.message);
+});
+
+Download.downloadAll("./.minecraft", "1.12.2", false, true);
 ```
 #### 🔧 Constructor
 
-| Parámetro     | Tipo               | Descripción                                                               |
-| ------------- | ------------------ | ------------------------------------------------------------------------- |
-| `rootPath`    | `string`           | Carpeta donde se descargará e instalará Minecraft.                        |
-| `javaVer`     | `string / boolean` | `"auto"` o versión específica (`"Java8"`, `"Java17"`, `"Java21"`, false). |
-| `versionType` | `string`           | `"release"`, `"snapshot"`, `"old_beta"`, `"old_alpha"`.                   |
+| Parámetro        | Tipo       | Descripción                                                                 |
+|------------------|------------|-----------------------------------------------------------------------------|
+| `root`           | `string`   | Ruta base donde se descargará e instalará Minecraft.                        |
+| `version`        | `string`   | Versión de Minecraft a instalar (ej: `"1.12.2"`).                           |
+| `downloadJava`   | `boolean`  | Si se debe descargar Java (`true`) o no (`false`).                          |
+| `fastMode`       | `boolean`  | Si se debe activar el modo rápido (descarga todo sin pasos intermedios).   |
+
 
 #### 📡 Eventos
 
@@ -70,16 +74,16 @@ downloader.on("error", (err) => console.error("[❌]", err));
 
 ---
 
-### 🛠️ `CustomInstaller`
+### 🛠️ `LoaderInstaller`
 
 Instala modloaders como **Forge**,**OptiFine**,**NeoForge**,**Quilt**,**Fabric**, sobre una instalación existente de Minecraft.
 
 #### 📦 Ejemplo de uso
 
 ```js
-const { CustomInstaller } = require("minecraft-core-master");
+const { LoaderInstaller } = require("minecraft-core-master");
 
-const installer = new CustomInstaller("./Minecraft", "1.20.4-forge-47.2.0", "Forge");
+const installer = new LoaderInstaller("./Minecraft", "1.20.4-forge-47.2.0", "Forge");
 
 installer.on("progress", (msg) => console.log("[Progreso]", msg));
 installer.on("done", (msg) => console.log("[✔]", msg));
@@ -95,103 +99,132 @@ installer.start()
 * La carpeta `destDir` debe tener una instalación válida de Minecraft.
 * Requiere **Java en PATH** para instalar Forge.
 * No descarga Minecraft base, solo inyecta el modloader deseado.
-
 ---
 
 ### 🎮 `MinecraftExecutor`
+
+![npm](./docs/players.png)
 
 Clase que permite **lanzar Minecraft** con control total: configuración de memoria, ruta Java, ventana, argumentos, y sistema de logs y errores con persistencia.
 
 #### 🚀 Ejemplo práctico
 
 ```js
-const { MinecraftExecutor } = require("minecraft-core-master");
+const { spawn } = require('child_process');
+const MinecraftExecutor = require('minecraft-core-master/components/launch');
 
-const executor = new MinecraftExecutor();
+const Launcher = new MinecraftExecutor();
 
-executor.on("data", (msg) => console.log("[MC STDOUT]", msg));
-executor.on("error", (err) => console.error("[MC STDERR]", err));
-executor.on("close", (code) => console.log("⚠️ Minecraft cerrado con código", code));
-
-executor.start({
-  root: "./.minecraft",
-  version: { versionID: "1.20.4", type: "release" },
-  authenticator: {
-    username: "Steve", // Obligatorio
-    password: null     // Opcional: Para multijugador *Coloca la misma contraseña en un servidor que necesites entrar*
+const opts = {
+  root: './.minecraft',
+  javaPath: 'C:/Program Files/Java/jre1.8.0_451/bin/javaw.exe' || 'java',
+  memory: {
+    max: '6G',
+    min: '1G',
   },
-  javaPath: "java", // Opcional
-  memory: { max: "4G", min: "1G" },
-  window: { width: 1280, height: 720, fullscreen: false },
-  mcArgs: ["--demo"], // Opcional
-  jvm: ["-XX:+DisableAttachMechanism"], // Opcional
-  overrides: { gameDirectory: "./.minecraft/custom" }, // Opcional
-  debug: true,
+  version: {
+    versionID: '1.12.2-forge-14.23.5.2860',
+    type: 'release',
+  },
+  client: {
+    username: 'SantiagoStepnicka012',
+    password: 'xxx_Santiago_xxx', // Opcional, para servidores que lo requieran
+  },
+  demo: false,  // Habilitar modo demo
+  debug: true,  // Mostrar logs detallados
+};
+
+Launcher.start(opts);
+
+Launcher.on('debug', console.log);
+Launcher.on('error', console.error);
+
+Launcher.on('ready', ({ args, opts }) => {
+  const child = spawn(opts.javaPath, args, {
+    stdio: 'inherit',
+  });
+  child.on('close', (code) => console.log(`⚠️ Java cerrado con código ${code}`));
 });
 ```
 
 #### ⚙️ Argumentos disponibles en `start(opts)`
 
-| Campo           | Tipo                                                  | Descripción                                                     |
-| --------------- | ----------------------------------------------------- | --------------------------------------------------------------- |
-| `root`          | `string`                                              | Carpeta raíz del juego.                                         |
-| `javaPath`      | `string`                                              | Ruta a `java` (opcional, se autodetecta si no está).            |
-| `memory`        | `{ min: string, max: string }`                        | Memoria asignada.                                               |
-| `window`        | `{ width: number, height: number, fullscreen: bool }` | Tamaño de ventana.                                              |
-| `version`       | `{ versionID: string, type: string }`                 | Versión de Minecraft a lanzar.                                  |
-| `authenticator` | `{ username: string, password?: string }`             | Usuario Mojang u offline.                                       |
-| `jvm`           | `string[]`                                            | Argumentos JVM adicionales.                                     |
-| `mcArgs`        | `string[]`                                            | Argumentos adicionales para Minecraft.                          |
-| `overrides`     | `object`                                              | Sobrescribe directorios como `assetsDir`, `gameDirectory`, etc. |
-| `debug`         | `boolean`                                             | Muestra logs detallados.                                        |
+| Campo       | Tipo                                                     | Descripción                                                     |
+| ----------- | -------------------------------------------------------- | --------------------------------------------------------------- |
+| `root`      | `string`                                                 | Carpeta raíz del juego.                                         |
+| `javaPath`  | `string`                                                 | Ruta a `java` (opcional, se autodetecta si no está).            |
+| `memory`    | `{ min: string, max: string }`                           | Memoria asignada (ej: `"1G"`, `"6G"`).                          |
+| `window`    | `{ width: number, height: number, fullscreen: boolean }` | Tamaño y modo de ventana del juego.                             |
+| `version`   | `{ versionID: string, type: string }`                    | Versión de Minecraft a lanzar.                                  |
+| `client`    | `{ username: string, password?: string }`                | Usuario Mojang u offline; password opcional para servidores.    |
+| `jvm`       | `string[]`                                               | Argumentos JVM adicionales.                                     |
+| `mcArgs`    | `string[]`                                               | Argumentos adicionales para Minecraft.                          |
+| `overrides` | `object`                                                 | Sobrescribe directorios como `assetsDir`, `gameDirectory`, etc. |
+| `demo`      | `boolean`                                                | Activa modo demo.                                               |
+| `debug`     | `boolean`                                                | Muestra logs detallados.                                        |
+
+---
 
 ## Supported versions / Versiones soportadas
 
-| Versión / Client| ¿Soportada? |
-|-----------------|-------------|
-| Vanilla         | ✅ Sí        |
-| Forge           | ✅ Sí        |
-| Optifine        | ✅ Sí        |
-| NeoForge        | ✅ Sí        |
-| Fabric          | ✅ Sí        |
-| Quilt           | ✅ Sí        |
-| Battly Client   | ✅ Sí        |
-| BatMod          | ✅ Sí        |
+| Versión / Cliente | ¿Soportada? |
+| ----------------- | ----------- |
+| **Vanilla**       | ✅ Sí        |
+| **Forge**         | ✅ Sí        |
+| **Optifine**      | ✅ Sí        |
+| **NeoForge**      | ✅ Sí        |
+| **Fabric**        | ✅ Sí        |
+| **Quilt**         | ✅ Sí        |
+| **Battly Client** | ✅ Sí        |
+| **BatMod**        | ✅ Sí        |
 
-Si vas a jugar una version custom, deja el **type** siempre en **release**, solo modifica el **versionID** añadiendo el nombre/Id de la version a ejecutar y deja que aga la magia
-Antes de lanzar una version custom, ejecuta la version normal/vanilla de minecraft para que este genere el launchwrapper o no funcionara
-#### 📁 Logs y errores
-
-* Guarda logs en `root/temp/mc_crash*.log` ante errores críticos.
-* Toda la salida estándar y de error se puede redireccionar en tiempo real vía eventos.
+> **Nota:** Este proyecto soporta el lanzamiento y gestión de **todas las versiones oficiales de Minecraft**, desde las más recientes hasta las más antiguas, incluyendo snapshots, betas, alphas y versiones históricas como la legendaria **rd-132211**. No importa qué tan vintage o moderna sea la versión, Minecraft-Core-Master la ejecutará con total estabilidad y rendimiento.
 
 ---
 
-## 📜 Scripts de prueba recomendados
+### 📁 Gestión avanzada de logs y errores
 
-Ejecutá desde `examples/` un test básico del launcher:
+* Los logs críticos y reportes de fallos se almacenan automáticamente en la carpeta `root/temp/` bajo archivos con prefijo `mc_crash*.log`, permitiendo una inspección detallada para diagnósticos rápidos y precisos.
+* Toda la salida estándar (`stdout`) y salida de error (`stderr`) del proceso Minecraft se expone en tiempo real a través de eventos, lo que facilita la integración con GUIs personalizadas, consolas o herramientas de monitoreo remoto.
+* La arquitectura basada en eventos permite capturar errores de manera proactiva y reaccionar ante ellos sin bloquear el flujo del programa, garantizando una experiencia estable para el usuario final.
+
+---
+
+## 📜 Scripts de prueba y demostración
+
+Incluimos ejemplos robustos en la carpeta `examples/` para que puedas probar cada componente de forma independiente o integrada. Estos scripts incluyen manejo de eventos detallado, seguimiento de progreso y captura de errores:
 
 ```bash
-node examples/MinecraftDownloader.js      # Descarga Minecraft
-node examples/MinecraftExecutor.js        # Lanza Minecraft
-node examples/CustomsDownloader.js        # Descarga versiones customs
+node examples/MinecraftDownloader.js      # Descarga y prepara cualquier versión de Minecraft con validación.
+node examples/MinecraftExecutor.js        # Ejecuta Minecraft con configuración avanzada y monitoreo.
+node examples/LoaderInstaller.js          # Instala modloaders y versiones personalizadas (mods/loaders). En Mantenimiento
 ```
 
-Cada archivo incluye pruebas reales con eventos de progreso, error y finalización.
+Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo extender o integrar Minecraft-Core-Master en tus proyectos.
+
+![npm](./docs/big-image.webp)
 
 ---
 
-## 🧪 Características técnicas destacadas
+## 🧪 Características técnicas sobresalientes
 
-* ✅ Descarga oficial desde Mojang con validación de integridad.
-* ✅ Compatible con **todas las versiones** de Minecraft: release, snapshot, beta, alpha.
-* ✅ Instalación modular y reutilizable para launchers propios.
-* ✅ Uso extensivo de `EventEmitter` para integración con GUI o CLI.
-* ✅ Soporte para sistemas Linux, Windows y macOS.
+* 🔒 **Descarga 100% oficial y segura:** Se obtienen todos los archivos directamente desde los servidores de Mojang con validación de integridad mediante hash, asegurando que nada sea modificado o corrupto.
+* 🔄 **Compatibilidad universal:** Soporte completo para **todas las versiones oficiales** de Minecraft, incluyendo versiones históricas, snapshots, betas, alphas y cualquier versión custom que respete el formato oficial.
+* 🧩 **Arquitectura modular y extensible:** Componentes diseñados para ser reutilizables, escalables y fáciles de integrar en launchers personalizados o proyectos propios, con eventos claros y documentación completa.
+* ⚡ **Eventos en tiempo real:** Gracias al uso intensivo de `EventEmitter`, la integración con interfaces gráficas o consolas avanzadas es simple y poderosa, permitiendo reportar estados, errores y progreso dinámicamente.
+* 🌍 **Multiplataforma real:** Comprobado en Linux, Windows y macOS, garantizando que tu launcher o proyecto corra sin problemas en cualquiera de estos sistemas operativos, con manejo automático de nativos.
+* 💻 **Soporte para modloaders y versiones custom:** Compatible con Forge, Fabric, NeoForge, Optifine, Quilt, Battly Client y BatMod, facilitando lanzar prácticamente cualquier configuración de Minecraft sin dolores de cabeza.
 
 ---
 
-## 🏢 NovaStep Studios
+## 🏢 Acerca de NovaStep Studios
 
-**Desarrollado con pasión y precisión por Santiago Stepnicka (a.k.a. Stepnicka)**
-🎯 Transformando launchers de Minecraft en plataformas profesionales.
+**Minecraft-Core-Master** es el resultado de la pasión y dedicación de **Santiago Stepnicka (Stepnicka)**, un desarrollador fullstack comprometido con el software libre, la modularidad y la excelencia técnica.
+
+🎯 **Nuestra misión:** Empoderar a desarrolladores y comunidades con herramientas profesionales, robustas y abiertas para transformar la forma en que se juega y se lanza Minecraft. Lanzar Minecraft no debe ser un dolor de cabeza; debe ser una experiencia fluida, personalizable y con control total.
+
+---
+
+¿Querés dar el siguiente paso y crear tu propio launcher personalizado? ¿Necesitás ayuda con ejemplos avanzados, integración en React/Electron o incluso un sistema de mods? Solo decime y te armo lo que necesites.
+
+---
