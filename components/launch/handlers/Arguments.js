@@ -69,7 +69,7 @@ module.exports = {
     // ===== GAME ARGUMENTS =====
 
     // Detectar carpeta assets vs resources
-    const assetDir = (version.assets === 'legacy' || version.assets === 'resources')
+    const assetDir = (version.assets === 'legacy/virtual' || version.assets === 'resources')
       ? 'resources'
       : 'assets';
 
@@ -86,7 +86,8 @@ module.exports = {
       auth_access_token: auth.accessToken,
       user_type: 'mojang',
       version_type: opts.version?.type || 'release',
-      user_properties: '{}',
+      // Aquí agregamos el valor base64 de las texturas
+      user_properties: auth.userProperties?.value || '{}',
       resolution_width: opts.window?.width || 854,
       resolution_height: opts.window?.height || 480,
       clientid: 'unknown',
@@ -127,6 +128,11 @@ module.exports = {
     }
 
     rawMcArgs.push(...mcFlags);
+
+    // *** Añadimos el flag --userProperties con el valor base64 de la skin/capa ***
+    if (auth.userProperties?.value) {
+      rawMcArgs.push('--userProperties', auth.userProperties.value);
+    }
 
     // ===== LIMPIEZA DE ARGUMENTOS =====
     const cleanedArgs = [];

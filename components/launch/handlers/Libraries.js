@@ -18,8 +18,25 @@ const isAllowed = (rules) => {
 const getLibPath = (lib, classifier = null, ext = 'jar') => {
   const parts = lib.name.split(':'); // [group, name, version]
   const groupPath = parts[0].replace(/\./g, '/');
-  const baseName = classifier ? `${parts[1]}-${parts[2]}-${classifier}.${ext}` : `${parts[1]}-${parts[2]}.${ext}`;
+  const baseName = classifier
+    ? `${parts[1]}-${parts[2]}-${classifier}.${ext}`
+    : `${parts[1]}-${parts[2]}.${ext}`;
   return path.join(groupPath, parts[1], parts[2], baseName);
+};
+
+// Para librerías que solo son URLs (extras), parseamos la URL para armar la ruta
+const getMaven2PathFromURL = (url) => {
+  try {
+    const urlObj = new URL(url);
+    // El path incluye el /maven2/ parte, lo removemos y usamos lo que sigue
+    // ej: /maven2/com/google/guava/guava/17.0/guava-17.0.jar
+    const mavenIndex = urlObj.pathname.indexOf('/maven2/');
+    if (mavenIndex === -1) return null;
+    const relPath = urlObj.pathname.substring(mavenIndex + '/maven2/'.length);
+    return relPath;
+  } catch {
+    return null;
+  }
 };
 
 // Función recursiva para juntar todas las librerías heredadas
@@ -45,34 +62,59 @@ async function gatherLibraries(root, versionId) {
 }
 
 module.exports = {
-  async validate(root, versionData) {
+  async validate(root, versionData, extraLibs = []) {
     // Usar la función recursiva para juntar todas las librerías (padres + actual)
     const libs = await gatherLibraries(root, versionData.id);
     const libDir = path.join(root, 'libraries');
+    const maven2Dir = path.join(libDir, 'maven2');
 
-    for (const lib of libs) {
-      if (!isAllowed(lib.rules)) continue;
+    // Unimos libs oficiales + extraLibs (extraLibs son URLs)
+    // extraLibs pueden ser URLs directas a Maven Central, se colocarán en maven2/
+    const allLibs = [...libs, ...extraLibs.map(url => ({ url }))];
 
-      // Priorizar artifact
-      if (lib.downloads?.artifact) {
-        const libPath = getLibPath(lib);
-        const fullPath = path.join(libDir, libPath);
-        if (!fs.existsSync(fullPath)) {
-          await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
-          await Download.fromURL(lib.downloads.artifact.url, fullPath);
-        }
-      }
+    for (const lib of allLibs) {
+      // Si lib es objeto con name (oficial)
+      if (lib.name) {
+        if (!isAllowed(lib.rules)) continue;
 
-      // También validar classifiers (ej: natives, classifiers.jar, etc)
-      if (lib.downloads?.classifiers) {
-        for (const [classifier, info] of Object.entries(lib.downloads.classifiers)) {
-          const ext = path.extname(info.path).slice(1) || 'jar';
-          const libPath = getLibPath(lib, classifier, ext);
+        // Artifact
+        if (lib.downloads?.artifact) {
+          const libPath = getLibPath(lib);
           const fullPath = path.join(libDir, libPath);
           if (!fs.existsSync(fullPath)) {
             await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
-            await Download.fromURL(info.url, fullPath);
+            await Download.fromURL(lib.downloads.artifact.url, fullPath);
           }
+        }
+
+        // Classifiers
+        if (lib.downloads?.classifiers) {
+          for (const [classifier, info] of Object.entries(lib.downloads.classifiers)) {
+            if (!info || !info.url) continue;
+            let ext = 'jar';
+            if (info.path && typeof info.path === 'string') {
+              ext = path.extname(info.path).slice(1) || 'jar';
+            }
+            const libPath = getLibPath(lib, classifier, ext);
+            const fullPath = path.join(libDir, libPath);
+            if (!fs.existsSync(fullPath)) {
+              await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
+              await Download.fromURL(info.url, fullPath);
+            }
+          }
+        }
+      }
+      // Si lib es objeto con url (extra libs)
+      else if (lib.url) {
+        const relPath = getMaven2PathFromURL(lib.url);
+        if (!relPath) {
+          console.warn(`[libraries.js] URL no válida o no Maven2: ${lib.url}`);
+          continue;
+        }
+        const fullPath = path.join(maven2Dir, relPath);
+        if (!fs.existsSync(fullPath)) {
+          await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
+          await Download.fromURL(lib.url, fullPath);
         }
       }
     }

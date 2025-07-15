@@ -3,7 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const VersionHandler = require('./handlers/Version');
-const Authenticator = require('./authenticator'); // Tu sistema nuevo
+const Authenticator = require('./authenticator/index');
 const NativesHandler = require('./handlers/Natives');
 const ClassPathHandler = require('./handlers/ClassPath');
 const ArgumentsHandler = require('./handlers/Arguments');
@@ -28,17 +28,22 @@ class MinecraftExecutor extends EventEmitter {
     try {
       debug('Iniciando autenticación...');
 
-      // Login con creación de launcher_profiles.json
-      const auth = await Authenticator.login(opts.client, {
+      const provider = opts.client.provider || (opts.client.password ? 'mojang' : 'legacy');
+
+      const auth = await Authenticator.login({
+        ...opts.client,
+        provider,
+      }, {
         demo: opts.demo,
-        provider: opts.client.password ? 'mojang' : 'legacy',
         root: opts.root,
         versionId: opts.version.versionID,
-        gameDir: opts.gameDir || opts.root
+        gameDir: opts.gameDir || opts.root,
       });
 
       debug(`Autenticado como ${auth.name}`);
-      
+      if (opts.client.skinUrl) debug(`Skin URL personalizada: ${opts.client.skinUrl}`);
+      if (opts.client.capeUrl) debug(`Cape URL personalizada: ${opts.client.capeUrl}`);
+
       debug(`Cargando versión ${opts.version.versionID}...`);
       const versionData = await VersionHandler.load(opts.root, opts.version.versionID);
 
@@ -72,6 +77,7 @@ class MinecraftExecutor extends EventEmitter {
         auth,
         classPath,
       });
+
       debug(`Ejecutando Java: ${opts.javaPath} ${args.join(' ')}`);
 
       this.childProcess = spawn(opts.javaPath, args, {
@@ -134,7 +140,7 @@ class MinecraftExecutor extends EventEmitter {
         min: userOpts.memory?.min || '512M',
       },
       version: {
-        versionID: userOpts.version?.versionID || 'latest',
+        versionID: userOpts.version?.versionID || '',
         type: userOpts.version?.type || 'release',
       },
       window: {
@@ -146,6 +152,10 @@ class MinecraftExecutor extends EventEmitter {
       client: {
         username: userOpts.client?.username || 'Player',
         password: userOpts.client?.password || '',
+        skinUrl: userOpts.client?.skinUrl || '',
+        capeUrl: userOpts.client?.capeUrl || '',
+        provider: userOpts.client?.provider || 'legacy',
+        email: userOpts.client?.email || null,
       },
       jvmFlags: Array.isArray(userOpts.jvmFlags) ? userOpts.jvmFlags : [],
       mcFlags: Array.isArray(userOpts.mcFlags) ? userOpts.mcFlags : [],

@@ -10,8 +10,9 @@ class MinecraftLibrariesDownloader extends EventEmitter {
     this.root = root;
     this.version = version;
     this.libsDir = path.join(root, "libraries");
-    this.extraLibsPath = extraLibsPath || path.join(__dirname,'ExtraLibs.json');
+    this.extraLibsPath = extraLibsPath || path.join(__dirname, 'ExtraLibs.json');
     this.currentOS = this.#mapOS(os.platform());
+    this.maxRetries = 3; // reintentos al descargar
   }
 
   async start() {
@@ -31,26 +32,34 @@ class MinecraftLibrariesDownloader extends EventEmitter {
       const filtered = libraries.filter(lib => this.#matchesRules(lib.rules));
       const officialLibs = filtered
         .map(lib => lib.downloads?.artifact?.url)
-        .filter(Boolean);
+        .filter(url => url && url.endsWith('.jar'));
 
       // 4. Cargar librerías extras (si hay)
       const extraLibs = this.extraLibsPath && fs.existsSync(this.extraLibsPath)
         ? JSON.parse(fs.readFileSync(this.extraLibsPath, "utf-8"))
         : [];
+      const extraLibsFiltered = extraLibs.filter(url => typeof url === 'string' && url.endsWith('.jar'));
 
-      const allLibs = [...officialLibs, ...extraLibs];
+      const allLibs = [...officialLibs, ...extraLibsFiltered];
       let downloaded = 0;
 
       for (const url of allLibs) {
-        const relPath = url.replace("https://libraries.minecraft.net/", "");
-        const fullPath = path.join(this.libsDir, relPath);
+        try {
+          const urlObj = new URL(url);
+          const relPath = urlObj.pathname.substring(1); // quitar slash inicial
+          const fullPath = path.join(this.libsDir, relPath);
 
-        if (!fs.existsSync(fullPath)) {
-          await this.#downloadFile(url, fullPath);
+          if (!fs.existsSync(fullPath)) {
+            await this.#downloadFileWithRetries(url, fullPath);
+            this.emit("log", `Descargado: ${url}`);
+          } else {
+            this.emit("log", `Ya existe: ${fullPath}`);
+          }
+          downloaded++;
+          this.#emitProgress(downloaded, allLibs.length);
+        } catch (err) {
+          this.emit("log", `[Warning] URL inválida o error: ${url} -> ${err.message}`);
         }
-
-        downloaded++;
-        this.#emitProgress(downloaded, allLibs.length);
       }
 
       this.emit("done");
@@ -71,15 +80,26 @@ class MinecraftLibrariesDownloader extends EventEmitter {
   #matchesRules(rules) {
     if (!rules || rules.length === 0) return true;
     let allowed = null;
-
     for (const rule of rules) {
       const osRule = rule.os?.name;
       const matches = osRule === this.currentOS;
       if (rule.action === "allow" && matches) allowed = true;
       if (rule.action === "disallow" && matches) allowed = false;
     }
-
     return allowed ?? true;
+  }
+
+  async #downloadFileWithRetries(url, dest, retries = 0) {
+    try {
+      await this.#downloadFile(url, dest);
+    } catch (err) {
+      if (retries < this.maxRetries) {
+        this.emit("log", `Reintentando descarga (${retries + 1}): ${url}`);
+        await new Promise(r => setTimeout(r, 1000)); // espera 1s
+        return this.#downloadFileWithRetries(url, dest, retries + 1);
+      }
+      throw err;
+    }
   }
 
   async #downloadFile(url, dest) {
@@ -91,7 +111,7 @@ class MinecraftLibrariesDownloader extends EventEmitter {
         if (res.statusCode !== 200) {
           file.close();
           fs.unlink(dest, () => {});
-          return reject(new Error(`[Minecraft-Core-Master || Downloader > Error] Fallo al descargar: ${url}`));
+          return reject(new Error(`[Minecraft-Core-Master || Downloader > Error] HTTP ${res.statusCode} al descargar: ${url}`));
         }
         res.pipe(file);
         file.on("finish", () => file.close(resolve));
@@ -113,7 +133,7 @@ class MinecraftLibrariesDownloader extends EventEmitter {
           try {
             resolve(JSON.parse(data));
           } catch (err) {
-            reject(err);
+            reject(new Error(`Error parseando JSON de ${url}: ${err.message}`));
           }
         });
       }).on("error", reject);

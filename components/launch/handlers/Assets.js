@@ -16,13 +16,33 @@ async function fetchJSON(url) {
   });
 }
 
+// Copiar carpeta icons recursivamente, pero sin sobrescribir archivos ya existentes
+async function copyIconsIfMissing(src, dest) {
+  const entries = await fs.promises.readdir(src, { withFileTypes: true });
+  await fs.promises.mkdir(dest, { recursive: true });
+
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (entry.isDirectory()) {
+      await copyIconsIfMissing(srcPath, destPath);
+    } else {
+      // Solo copiar si no existe en destino
+      if (!fs.existsSync(destPath)) {
+        await fs.promises.copyFile(srcPath, destPath);
+      }
+    }
+  }
+}
+
 module.exports = {
   async setup(root, versionData) {
     const assetsID = versionData.assets || versionData.assetIndex.id;
     const assetsDir = path.join(root, 'assets');
     const indexesDir = path.join(assetsDir, 'indexes');
     const objectsDir = path.join(assetsDir, 'objects');
-    const virtualDir = path.join(assetsDir, 'legacy', 'virtual', 'legacy');
+    const virtualDir = path.join(assetsDir, 'legacy', 'virtual');
     const resourcesDir = path.join(root, 'resources');
 
     const indexURL = versionData.assetIndex?.url ||
@@ -69,6 +89,14 @@ module.exports = {
         await fs.promises.mkdir(path.dirname(legacyTarget), { recursive: true });
         await fs.promises.copyFile(objectPath, legacyTarget);
       }
+    }
+
+    // Copiar icons solo si no existen en destino (para no romper sonido u otros recursos)
+    const srcIcons = path.join(resourcesDir, 'icons');
+    const destIcons = path.join(assetsDir, 'icons');
+
+    if (fs.existsSync(srcIcons)) {
+      await copyIconsIfMissing(srcIcons, destIcons);
     }
   }
 };

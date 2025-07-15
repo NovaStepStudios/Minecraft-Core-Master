@@ -12,126 +12,180 @@ const normalizeOS = {
 
 const isAllowed = (rules) => {
   if (!rules) return true;
-
-  let allowed = true;
+  let result = null;
   for (const rule of rules) {
-    const action = rule.action === 'allow';
     const matchOS = !rule.os || rule.os.name === normalizeOS;
-    if (matchOS) allowed = action;
+    if (matchOS) {
+      result = rule.action === 'allow';
+    }
   }
-
-  return allowed;
+  return result !== null ? result : false;
 };
 
-const getLibPath = (lib) => {
+const getLibPath = (lib, classifier = null, ext = 'jar') => {
+  if (!lib.name) return null;
   const [group, name, version] = lib.name.split(':');
+  if (!group || !name || !version) return null;
   const groupPath = group.replace(/\./g, '/');
-  return path.join(groupPath, name, version, `${name}-${version}.jar`);
+  const baseName = classifier ? `${name}-${version}-${classifier}.${ext}` : `${name}-${version}.jar`;
+  return path.join(groupPath, name, version, baseName);
 };
 
-// Encuentra la versión base final (sin herencia)
 const findFinalJarVersionID = (root, startID) => {
   let currentID = startID;
-
   while (true) {
     const jsonPath = path.join(root, 'versions', currentID, `${currentID}.json`);
     if (!fs.existsSync(jsonPath)) break;
-
     const json = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
     if (!json.inheritsFrom) break;
-
     currentID = json.inheritsFrom;
   }
-
   return currentID;
 };
+
 const mergeInheritedLibraries = (root, versionData) => {
   let merged = [...(versionData.libraries || [])];
   let currentID = versionData.inheritsFrom;
-
   while (currentID) {
     const jsonPath = path.join(root, 'versions', currentID, `${currentID}.json`);
     if (!fs.existsSync(jsonPath)) break;
-
     const parent = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-    merged = [...(parent.libraries || []), ...merged]; // Importante: el padre va primero
+    merged = [...(parent.libraries || []), ...merged];
     currentID = parent.inheritsFrom;
   }
-
   return merged;
 };
+
+const filterIncompatibleLibs = (libs, versionID) => {
+  const isForge1710 = versionID.includes('1.7.10') && libs.some(l => l.name?.includes('forge'));
+  if (!isForge1710) return libs;
+  return libs.filter(lib => {
+    if (!lib.name) return true;
+    if (lib.name.startsWith('com.google.guava:guava:')) {
+      const version = lib.name.split(':')[2];
+      const major = parseInt(version.split('.')[0]);
+      return major <= 17;
+    }
+    return true;
+  });
+};
+
+const tryAddLib = (libPath, classPathSet, classPath) => {
+  if (fs.existsSync(libPath)) {
+    const absPath = path.resolve(libPath);
+    if (!classPathSet.has(absPath)) {
+      classPathSet.add(absPath);
+      classPath.push(absPath);
+    }
+  } else {
+    console.warn(`[Classpath] Archivo no encontrado: ${libPath}`);
+  }
+};
+
+const addMaven2Jars = (maven2Dir, classPathSet, classPath) => {
+  if (!fs.existsSync(maven2Dir)) return;
+  const walk = (dir) => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.jar')) {
+        tryAddLib(fullPath, classPathSet, classPath);
+      }
+    }
+  };
+  walk(maven2Dir);
+};
+
+const resolveLibPath = (libDir, maven2Dir, lib) => {
+  const candidates = [];
+  if (lib.downloads?.classifiers?.jar?.path)
+    candidates.push(lib.downloads.classifiers.jar.path);
+  if (lib.downloads?.artifact?.path)
+    candidates.push(lib.downloads.artifact.path);
+  if (lib.name)
+    candidates.push(getLibPath(lib));
+
+  for (const relPath of candidates) {
+    const fromLibs = path.join(libDir, relPath);
+    if (fs.existsSync(fromLibs)) return fromLibs;
+    const fromMaven = path.join(maven2Dir, relPath);
+    if (fs.existsSync(fromMaven)) return fromMaven;
+  }
+  return null;
+};
+
 module.exports = {
-  
   async build(root, versionData) {
     const classPath = [];
     const libDir = path.join(root, 'libraries');
-    const libs = mergeInheritedLibraries(root, versionData);
+    const maven2Dir = path.join(root, 'maven2');
+
+    let libs = mergeInheritedLibraries(root, versionData);
+    libs = filterIncompatibleLibs(libs, versionData.id);
+    libs = libs.filter(lib => isAllowed(lib.rules));
+
+    const isForge1710 = versionData.id.includes('1.7.10') && libs.some(l => l.name?.includes('forge'));
+    const classPathSet = new Set();
+
+    if (isForge1710) {
+      const guavaForcedPath = path.resolve(libDir, 'maven2/com/google/guava/guava/17.0/guava-17.0.jar');
+      if (fs.existsSync(guavaForcedPath)) {
+        tryAddLib(guavaForcedPath, classPathSet, classPath);
+        console.log('[Classpath] Guava 17.0 forzada para Forge 1.7.10');
+      } else {
+        console.warn(`[Classpath] guava-17.0.jar no encontrada en: ${guavaForcedPath}`);
+      }
+    }
 
     for (const lib of libs) {
-      if (!isAllowed(lib.rules)) continue;
-
-      let libPath = null;
-
-      // Prioriza artifact, luego classifiers.jar, luego ruta construida manualmente
-      if (lib.downloads?.artifact?.path) {
-        libPath = path.join(libDir, lib.downloads.artifact.path);
-      } else if (lib.downloads?.classifiers?.jar?.path) {
-        libPath = path.join(libDir, lib.downloads.classifiers.jar.path);
-      } else if (lib.name) {
-        libPath = path.join(libDir, getLibPath(lib));
-      }
-
+      if (isForge1710 && lib.name?.startsWith('com.google.guava:guava:')) continue;
+      const libPath = resolveLibPath(libDir, maven2Dir, lib);
       if (!libPath) {
-        console.warn(`[Classpath] No se pudo resolver path para la librería: ${lib.name}`);
+        console.warn(`[Classpath] No se pudo resolver path para: ${lib.name || '[sin nombre]'}`);
         continue;
       }
+      tryAddLib(libPath, classPathSet, classPath);
+    }
 
-      if (fs.existsSync(libPath)) {
-        const absolutePath = path.resolve(libPath);
-        if (!classPath.includes(absolutePath)) {
-          classPath.push(absolutePath);
-        }
-      } else {
-        console.warn(`[Classpath] Archivo no encontrado: ${libPath}`);
+    const joptVersions = ['4.6', '4.5'];
+    let joptFound = false;
+    for (const ver of joptVersions) {
+      const joptPath = path.resolve(libDir, `net/sf/jopt-simple/jopt-simple/${ver}/jopt-simple-${ver}.jar`);
+      if (fs.existsSync(joptPath)) {
+        tryAddLib(joptPath, classPathSet, classPath);
+        joptFound = true;
+        break;
       }
     }
+    if (!joptFound) console.warn('[Classpath] jopt-simple no encontrado');
 
-    // Añadir explícitamente jopt-simple (versión para MC 1.12.2 usualmente 4.6)
-    const joptsimplePath = path.resolve(
-      libDir,
-      'net/sf/jopt-simple/jopt-simple/4.6/jopt-simple-4.6.jar'
-    );
-    if (fs.existsSync(joptsimplePath) && !classPath.includes(joptsimplePath)) {
-      classPath.push(joptsimplePath);
-    } else {
-      console.warn(`[Classpath] jopt-simple no encontrado en: ${joptsimplePath}`);
-    }
-
-    // Añadir log4j (para seguridad en versiones antiguas)
-    const log4jLibs = [
-      'org/apache/logging/log4j/log4j-api/2.17.1/log4j-api-2.17.1.jar',
-      'org/apache/logging/log4j/log4j-core/2.17.1/log4j-core-2.17.1.jar',
+    const log4jCandidates = [
+      ['2.17.1', 'log4j-api'],
+      ['2.17.1', 'log4j-core'],
+      ['2.0-beta9', 'log4j-api'],
+      ['2.0-beta9', 'log4j-core'],
     ];
-
-    for (const jarRelPath of log4jLibs) {
-      const fullPath = path.resolve(libDir, jarRelPath);
-      if (fs.existsSync(fullPath) && !classPath.includes(fullPath)) {
-        classPath.push(fullPath);
-      } else {
-        console.warn(`[Classpath] Log4j no encontrado en: ${fullPath}`);
+    let log4jAdded = false;
+    for (const [ver, name] of log4jCandidates) {
+      const jarRelPath = `org/apache/logging/log4j/${name}/${ver}/${name}-${ver}.jar`;
+      const jarFullPath = path.resolve(libDir, jarRelPath);
+      if (fs.existsSync(jarFullPath)) {
+        tryAddLib(jarFullPath, classPathSet, classPath);
+        log4jAdded = true;
       }
     }
+    if (!log4jAdded) console.warn('[Classpath] Ningún log4j encontrado');
 
-    // Añadir jar base final de la versión
     const finalVersionID = findFinalJarVersionID(root, versionData.id);
     const jarPath = path.resolve(root, 'versions', finalVersionID, `${finalVersionID}.jar`);
-
     if (!fs.existsSync(jarPath)) {
-      throw new Error(`[Classpath] No se encontró el archivo JAR del cliente base: ${jarPath}`);
+      throw new Error(`[Classpath] No se encontró el jar base: ${jarPath}`);
     }
+    tryAddLib(jarPath, classPathSet, classPath);
 
-    classPath.push(jarPath);
-
+    addMaven2Jars(maven2Dir, classPathSet, classPath);
     return classPath;
   }
 };
