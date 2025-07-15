@@ -197,9 +197,8 @@ Launcher.on('ready', ({ args, opts }) => {
 Incluimos ejemplos robustos en la carpeta `examples/` para que puedas probar cada componente de forma independiente o integrada. Estos scripts incluyen manejo de eventos detallado, seguimiento de progreso y captura de errores:
 
 ```bash
-node examples/MinecraftDownloader.js      # Descarga y prepara cualquier versión de Minecraft con validación.
-node examples/MinecraftExecutor.js        # Ejecuta Minecraft con configuración avanzada y monitoreo.
-node examples/LoaderInstaller.js          # Instala modloaders y versiones personalizadas (mods/loaders). En Mantenimiento
+node test/Download.js      # Descarga y prepara cualquier versión de Minecraft con validación.
+node test/Start.js        # Ejecuta Minecraft con configuración avanzada y monitoreo.
 ```
 
 Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo extender o integrar Minecraft-Core-Master en tus proyectos.
