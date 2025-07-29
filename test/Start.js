@@ -1,4 +1,4 @@
-const MinecraftExecutor = require('../components/launch/index.js');
+const {MinecraftExecutor} = require('../main.js');
 const path = require('path');
 const Launcher = new MinecraftExecutor();
 
@@ -10,7 +10,7 @@ const opts = {
         min: '1G',
     },
     version:{
-        versionID: '1.12.2-forge-14.23.5.2860',
+        versionID: '1.4.7',
         type: 'release',
     },
     // window:{
@@ -20,10 +20,9 @@ const opts = {
     // },
     client:{
         username: 'SantiagoStepnicka012',
-        password: 'xxx_Santiago_xxx',
+        password: 'SantiagoStepnicka',
         skinUrl: path.join(__dirname,'skin','skin.png'),
         capeUrl: path.join(__dirname,'skin','cape.png'),
-        provider: 'legacy'
     },
     // jvmFlags:{}
     // mcFlags:{}

@@ -18,4 +18,4 @@ Download.on("error", err => {
   console.error("❌ Error:", err.message);
 });
 
-Download.downloadAll("./.minecraft", "1.12.2",false, true);
+Download.downloadAll("./.minecraft", "1.5.2","Java20", true);

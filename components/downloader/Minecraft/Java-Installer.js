@@ -1,16 +1,16 @@
+"use strict";
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 const https = require("https");
 const EventEmitter = require("events");
 const unzipper = require("unzipper");
 const tar = require("tar");
 
 class JavaInstaller extends EventEmitter {
-  constructor(root, version, jsonPath) {
+  constructor(root, version = false, jsonPath) {
     super();
     this.root = root;
-    this.version = version;
+    this.version = version; // Puede ser false, true o "Java20"
     this.jsonPath = jsonPath || path.join(__dirname, "JVM.json");
     this.jvmData = null;
   }
@@ -51,7 +51,7 @@ class JavaInstaller extends EventEmitter {
         res.on("data", chunk => {
           downloaded += chunk.length;
           const percent = ((downloaded / total) * 100).toFixed(1);
-          this.emit("progress", `${percent}%`);
+          this.emit("progress", { percent: parseFloat(percent) });
         });
 
         res.pipe(file);
@@ -88,20 +88,33 @@ class JavaInstaller extends EventEmitter {
       await this.#loadConfig();
 
       const osKey = this.#normalizeOS(forcedOS);
-      const url = this.jvmData?.[this.version]?.[osKey];
-      if (!url) throw new Error(`No se encontró URL para Java ${this.version} en ${osKey}`);
 
-      const destDir = path.join(this.root, "runtime", this.version);
+      // Resolver versión si es true/false/undefined
+      let javaVersionKey = this.version;
+      if (!this.version || this.version === true || this.version === false) {
+        if (this.jvmData.latest) {
+          javaVersionKey = this.jvmData.latest;
+        } else {
+          const keys = Object.keys(this.jvmData).filter(k => k !== "latest").sort();
+          javaVersionKey = keys[keys.length - 1];
+        }
+      }
+
+      const url = this.jvmData?.[javaVersionKey]?.[osKey];
+      if (!url) throw new Error(`No se encontró URL para Java ${javaVersionKey} en ${osKey}`);
+
+      const destDir = path.join(this.root, "runtime", javaVersionKey);
       await fs.promises.mkdir(destDir, { recursive: true });
 
       if (this.#isInstalled(destDir)) {
-        this.emit("progress", "100%");
-        this.emit("done", `JVM ${this.version} ya está instalada en ${destDir}`);
+        this.emit("progress", 100);
+        this.emit("done", `JVM ${javaVersionKey} ya está instalada en ${destDir}`);
         return destDir;
       }
 
+      this.emit("progress", 0); // Iniciar progreso en 0%
+
       const archive = path.join(destDir, path.basename(url));
-      this.emit("progress", `Descargando Java ${this.version} para ${osKey}`);
       await this.#downloadFile(url, archive);
 
       if (archive.endsWith(".zip")) {
@@ -114,8 +127,8 @@ class JavaInstaller extends EventEmitter {
 
       if (fs.existsSync(archive)) await fs.promises.unlink(archive);
 
-      this.emit("progress", "100%");
-      this.emit("done", `Java ${this.version} lista en ${destDir}`);
+      this.emit("progress", 100);
+      this.emit("done", `Java ${javaVersionKey} lista en ${destDir}`);
       return destDir;
 
     } catch (err) {

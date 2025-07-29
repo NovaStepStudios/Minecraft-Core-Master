@@ -1,4 +1,4 @@
-const MinecraftClientDownloader = require("../components/downloader/Minecraft/Minecraft-Client");
+const MinecraftClientDownloader = require("../../components/downloader/Minecraft/Minecraft-Client");
 
 const downloader = new MinecraftClientDownloader("./.minecraft", "1.20.4");
 

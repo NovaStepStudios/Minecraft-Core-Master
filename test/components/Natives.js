@@ -1,4 +1,4 @@
-const MinecraftNativesDownloader = require("../components/downloader/Minecraft/Minecraft-Natives");
+const MinecraftNativesDownloader = require("../../components/downloader/Minecraft/Minecraft-Natives");
 
 const downloader = new MinecraftNativesDownloader("./.minecraft", "1.20.4");
 

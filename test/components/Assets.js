@@ -1,4 +1,4 @@
-const MinecraftAssetsDownloader = require("../components/downloader/Minecraft/Minecraft-Assets");
+const MinecraftAssetsDownloader = require("../../components/downloader/Minecraft/Minecraft-Assets");
 
 const downloader = new MinecraftAssetsDownloader("./.minecraft", "1.20.4");
 

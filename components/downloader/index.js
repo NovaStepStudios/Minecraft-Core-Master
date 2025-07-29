@@ -1,3 +1,4 @@
+"use strict";
 const EventEmitter = require('events');
 const ForgeInstaller = require('./loaders/forge/forge');
 const FabricInstaller = require('./loaders/fabric/fabric');

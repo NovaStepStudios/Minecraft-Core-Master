@@ -1,19 +1,25 @@
+"use strict";
+require('dotenv').config();
 const fetch = require('node-fetch').default;
 const crypto = require('crypto');
-const http = require('http');
+const express = require('express');
 const open = require('open').default;
+const path = require('path');
 
 const MS_AUTH_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize';
 const MS_TOKEN_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
+
 const XBL_AUTH_URL = 'https://user.auth.xboxlive.com/user/authenticate';
 const XSTS_AUTH_URL = 'https://xsts.auth.xboxlive.com/xsts/authorize';
 const MINECRAFT_AUTH_URL = 'https://api.minecraftservices.com/authentication/login_with_xbox';
 
 class AuthenticatorMicrosoft {
   constructor() {
-    this.clientId = 'c3b7b1ee-a7ed-40ef-b6b1-48483b2de93c';
-    this.scope = 'XboxLive.signin offline_access';
-    this.redirectUri = 'https://localhost:3000/outh';
+    this.clientId = process.env.MS_CLIENT_ID;
+    this.clientSecret = process.env.MS_CLIENT_SECRET;
+    this.scope = 'XboxLive.signin offline_access openid profile';
+    this.redirectUri = 'http://localhost:3000/outh';
+    this.port = 3000;
   }
 
   generatePKCE() {
@@ -34,36 +40,24 @@ class AuthenticatorMicrosoft {
   async login() {
     const { verifier, challenge } = this.generatePKCE();
 
-    const authUrl = `${MS_AUTH_URL}?client_id=${this.clientId}&response_type=code&redirect_uri=${encodeURIComponent(this.redirectUri)}&scope=${encodeURIComponent(this.scope)}&code_challenge=${challenge}&code_challenge_method=S256&response_mode=query`;
+    const authUrl = `${MS_AUTH_URL}?client_id=${this.clientId}` +
+      `&response_type=code&redirect_uri=${encodeURIComponent(this.redirectUri)}` +
+      `&scope=${encodeURIComponent(this.scope)}` +
+      `&code_challenge=${challenge}&code_challenge_method=S256&response_mode=query`;
 
-    // Abrir navegador
     open(authUrl);
 
-    const code = await new Promise((resolve, reject) => {
-      const server = http.createServer((req, res) => {
-        // Escuchar la ruta /outh que definiste en redirectUri
-        if (req.url.startsWith('/outh')) {
-          const url = new URL(`http://localhost:3000${req.url}`);
-          const authCode = url.searchParams.get('code');
-          res.writeHead(200, {'Content-Type': 'text/html'});
-          res.end('<h2>Login completado! Podés cerrar esta ventana.</h2>');
-          server.close();
-          if (authCode) resolve(authCode);
-          else reject(new Error('No se recibió código de autorización'));
-        }
-      }).listen(3000);
-    });
+    const code = await this.waitForCode();
 
     const tokenResponse = await this.getTokens(code, verifier);
 
     const xblToken = await this.getXBLToken(tokenResponse.access_token);
     const xstsToken = await this.getXSTSToken(xblToken.Token);
+
     const mcAuth = await this.loginMinecraft(xstsToken.Token, xstsToken.DisplayClaims.xui[0].uhs);
 
     const profileRes = await fetch('https://api.minecraftservices.com/minecraft/profile', {
-      headers: {
-        Authorization: `Bearer ${mcAuth.access_token}`
-      }
+      headers: { Authorization: `Bearer ${mcAuth.access_token}` },
     });
 
     if (!profileRes.ok) throw new Error(`Error obteniendo perfil de Minecraft: ${profileRes.statusText}`);
@@ -79,6 +73,34 @@ class AuthenticatorMicrosoft {
     };
   }
 
+  waitForCode() {
+    return new Promise((resolve, reject) => {
+      const app = express();
+      const server = app.listen(this.port, () => {
+        console.log(`[Auth] Esperando código de autorización en http://localhost:${this.port}/outh ...`);
+      });
+
+      app.get('/outh', (req, res) => {
+        const authCode = req.query.code;
+        if (authCode) {
+          // Servir archivo HTML local con mensaje personalizado
+          res.sendFile(path.join(__dirname, 'success.html'));
+          server.close();
+          resolve(authCode);
+        } else {
+          res.status(400).send('No se recibió código de autorización');
+          server.close();
+          reject(new Error('No se recibió código de autorización'));
+        }
+      });
+
+      setTimeout(() => {
+        server.close();
+        reject(new Error('Tiempo agotado esperando código de autorización'));
+      }, 5 * 60 * 1000);
+    });
+  }
+
   async getTokens(code, verifier) {
     const params = new URLSearchParams();
     params.append('client_id', this.clientId);
@@ -86,6 +108,7 @@ class AuthenticatorMicrosoft {
     params.append('code', code);
     params.append('redirect_uri', this.redirectUri);
     params.append('code_verifier', verifier);
+    params.append('client_secret', this.clientSecret);
 
     const res = await fetch(MS_TOKEN_URL, {
       method: 'POST',
@@ -119,6 +142,9 @@ class AuthenticatorMicrosoft {
 
     if (!res.ok) {
       const text = await res.text();
+      if (res.status === 401) {
+        throw new Error('Tu cuenta de Microsoft no tiene un perfil de Xbox. Crealo gratis en https://account.xbox.com/');
+      }
       throw new Error(`Error Xbox Live Auth: ${res.status} ${text}`);
     }
 

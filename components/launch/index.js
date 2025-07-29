@@ -1,4 +1,6 @@
+"use strict";
 const EventEmitter = require('events');
+const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -103,6 +105,13 @@ class MinecraftExecutor extends EventEmitter {
 
       this.childProcess.on('error', err => {
         debug('Error al ejecutar Java');
+        this._saveErrorLog(err, {
+          profile: opts.client.username,
+          version: opts.version.versionID,
+          javaPath: opts.javaPath,
+          component: 'Executor',
+          root: opts.root
+        });
         this.emit('error', err);
       });
 
@@ -110,6 +119,13 @@ class MinecraftExecutor extends EventEmitter {
         debug(`Java cerrado con código ${code}`);
         if (code !== 0) {
           const output = (stderr + stdout).trim() || '(sin salida)';
+          this._saveErrorLog(err, {
+            profile: opts.client.username,
+            version: opts.version.versionID,
+            javaPath: opts.javaPath,
+            component: 'Executor',
+            root: opts.root
+          });
           this.emit('error', new Error(`Java finalizó con código ${code}\nSalida:\n${output}`));
         } else {
           this.emit('close', code);
@@ -119,6 +135,13 @@ class MinecraftExecutor extends EventEmitter {
       this.emit('started', { auth, opts, versionData });
 
     } catch (err) {
+      this._saveErrorLog(err, {
+        profile: opts.client.username,
+        version: opts.version.versionID,
+        javaPath: opts.javaPath,
+        component: 'Executor',
+        root: opts.root
+      });
       this.emit('error', err);
     }
   }
@@ -130,10 +153,46 @@ class MinecraftExecutor extends EventEmitter {
       this.emit('debug', 'Proceso Java detenido');
     }
   }
+  _saveErrorLog(err, context = {}) {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
+    const fileName = `minecraft-core-master_step_executor_${dateStr}_${timeStr}_${context.profile || 'UnknownUser'}.log`;
+
+    const logContent = `
+    =========== MINECRAFT CORE MASTER ERROR LOG ===========
+    Date       : ${now.toISOString()}
+    Profile    : ${context.profile || 'UnknownUser'}
+    Version    : ${context.version || 'UnknownVersion'}
+    OS         : ${process.platform}
+    Java Path  : ${context.javaPath || 'UnknownJavaPath'}
+    Component  : ${context.component || 'General'}
+
+    ERROR MESSAGE:
+    ${err.message}
+
+    STACKTRACE:
+    ${err.stack}
+
+    JAVA STDOUT:
+    ${context.stdout || '(empty)'}
+
+    JAVA STDERR:
+    ${context.stderr || '(empty)'}
+    =======================================================
+    `;
+
+      const logDir = path.resolve(context.root || './', 'logs');
+      if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+
+      const logPath = path.join(logDir, fileName);
+      fs.writeFileSync(logPath, logContent, 'utf-8');
+      console.error(`❌ [ERROR LOG] Guardado en: ${logPath}`);
+  }
 
   _normalizeOptions(userOpts) {
     return {
-      root: userOpts.root || './',
+      root: userOpts.root || './Minecraft-Core-Master',
       javaPath: userOpts.javaPath || 'java',
       memory: {
         max: userOpts.memory?.max || '2G',

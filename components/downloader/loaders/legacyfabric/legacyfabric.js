@@ -1,23 +1,23 @@
+"use strict";
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-class QuiltInstaller {
+class LegacyFabricInstaller {
   constructor(minecraftPath, gameVersion, outputDir = null) {
     this.minecraftPath = path.resolve(minecraftPath);
     this.gameVersion = gameVersion;
 
     this.outputDir = outputDir
       ? path.resolve(outputDir)
-      : path.join(this.minecraftPath, 'temp', 'quilt');
+      : path.join(this.minecraftPath, 'temp', 'legacyfabric');
 
-    // URL base de Quilt Meta API para loaders (v1 es estable)
-    this.loaderApiUrl = `https://meta.quiltmc.org/v3/versions/loader`;
+    this.loaderApiUrl = `https://meta.legacyfabric.net/v2/versions/loader/${encodeURIComponent(gameVersion)}`;
   }
 
   getVersionId(loaderVersion) {
-    return `quilt-${this.gameVersion}-${loaderVersion}`;
+    return `legacyfabric-${this.gameVersion}-${loaderVersion}`;
   }
 
   isInstalled(versionId) {
@@ -46,7 +46,7 @@ class QuiltInstaller {
     const MAX_REDIRECTS = 5;
     return new Promise((resolve, reject) => {
       if (redirectCount > MAX_REDIRECTS) {
-        return reject(new Error(`Too many redirects for ${url}`));
+        return reject(new Error(`Demasiadas redirecciones para ${url}`));
       }
 
       fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -60,7 +60,7 @@ class QuiltInstaller {
           if (!redirectUrl) {
             file.close();
             fs.unlinkSync(dest);
-            return reject(new Error(`Redirect without location header for ${url}`));
+            return reject(new Error(`Redirección sin Location para ${url}`));
           }
           file.close();
           fs.unlinkSync(dest);
@@ -70,14 +70,14 @@ class QuiltInstaller {
         if (res.statusCode !== 200) {
           file.close();
           fs.unlinkSync(dest);
-          return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+          return reject(new Error(`HTTP ${res.statusCode} para ${url}`));
         }
 
         const timeoutId = setTimeout(() => {
           request.abort();
           file.close();
           fs.unlinkSync(dest);
-          reject(new Error(`Timeout downloading ${url}`));
+          reject(new Error(`Timeout descargando ${url}`));
         }, 30000);
 
         res.pipe(file);
@@ -104,7 +104,7 @@ class QuiltInstaller {
 
   getLibraryPath(name) {
     const parts = name.split(':');
-    if (parts.length !== 3) throw new Error(`Invalid library name format: ${name}`);
+    if (parts.length !== 3) throw new Error(`Formato inválido de library name: ${name}`);
     const [group, artifact, version] = parts;
     const groupPath = group.replace(/\./g, '/');
     return path.join(groupPath, artifact, version, `${artifact}-${version}.jar`);
@@ -112,7 +112,7 @@ class QuiltInstaller {
 
   getLibraryUrlPath(name) {
     const parts = name.split(':');
-    if (parts.length !== 3) throw new Error(`Invalid library name format: ${name}`);
+    if (parts.length !== 3) throw new Error(`Formato inválido de library name: ${name}`);
     const [group, artifact, version] = parts;
     const groupPath = group.replace(/\./g, '/');
     return `${groupPath}/${artifact}/${version}/${artifact}-${version}.jar`;
@@ -121,41 +121,35 @@ class QuiltInstaller {
   async fetchLatestStableLoader() {
     const loaders = await this.fetchJson(this.loaderApiUrl);
     if (!Array.isArray(loaders) || loaders.length === 0) {
-        throw new Error(`No loader data available`);
+      throw new Error(`No loader data available for Minecraft version ${this.gameVersion}`);
     }
+    const stableLoader = loaders.find(l => l.loader.stable === true) || loaders[0];
+    if (!stableLoader) throw new Error(`No loader version found for ${this.gameVersion}`);
 
-    // Quilt no filtra por versión de Minecraft, así que
-    // retornamos el último loader estable (stable === true) o el último disponible
-    const stableLoaders = loaders.filter(l => l.stable === true);
-    if (stableLoaders.length > 0) {
-        return stableLoaders[0].version; // asume que el array está ordenado descendentemente
-    }
-
-    return loaders[0].version; // fallback al primero
-    }
-
+    return stableLoader.loader.version;
+  }
 
   async install() {
-    console.log(`[QuiltInstaller] Buscando loader para Minecraft ${this.gameVersion}...`);
+    console.log(`[LegacyFabricInstaller] Buscando loader para Minecraft ${this.gameVersion}...`);
 
     let loaderVersion;
     try {
       loaderVersion = await this.fetchLatestStableLoader();
     } catch (err) {
-      console.error(`[QuiltInstaller] Error al obtener loader: ${err.message}`);
+      console.error(`[LegacyFabricInstaller] Error al obtener loader: ${err.message}`);
       return false;
     }
 
     const versionId = this.getVersionId(loaderVersion);
 
-    const profileUrl = `https://meta.quiltmc.org/v3/versions/loader/${this.gameVersion}/${loaderVersion}/profile/json`;
-    console.log(`[QuiltInstaller] Descargando perfil desde: ${profileUrl}`);
+    const profileUrl = `https://meta.legacyfabric.net/v2/versions/loader/${this.gameVersion}/${loaderVersion}/profile/json`;
+    console.log(`[LegacyFabricInstaller] Descargando perfil desde: ${profileUrl}`);
 
     let profileJson;
     try {
       profileJson = await this.fetchJson(profileUrl);
     } catch (err) {
-      console.error(`[QuiltInstaller] Error al descargar perfil: ${err.message}`);
+      console.error(`[LegacyFabricInstaller] Error al descargar perfil: ${err.message}`);
       return false;
     }
 
@@ -164,19 +158,19 @@ class QuiltInstaller {
       fs.mkdirSync(versionDir, { recursive: true });
       const profilePath = path.join(versionDir, `${versionId}.json`);
       fs.writeFileSync(profilePath, JSON.stringify(profileJson, null, 2));
-      console.log(`[QuiltInstaller] Perfil guardado en: ${profilePath}`);
+      console.log(`[LegacyFabricInstaller] Perfil guardado en: ${profilePath}`);
     } catch (err) {
-      console.error(`[QuiltInstaller] Error al guardar perfil: ${err.message}`);
+      console.error(`[LegacyFabricInstaller] Error al guardar perfil: ${err.message}`);
       return false;
     }
 
     if (!Array.isArray(profileJson.libraries)) {
-      console.warn('[QuiltInstaller] No se encontraron librerías para descargar.');
-      console.log(`[QuiltInstaller] Instalación completa para ${versionId}`);
+      console.warn('[LegacyFabricInstaller] No se encontraron librerías para descargar.');
+      console.log(`[LegacyFabricInstaller] Instalación completa para ${versionId}`);
       return true;
     }
 
-    console.log(`[QuiltInstaller] Descargando ${profileJson.libraries.length} librerías...`);
+    console.log(`[LegacyFabricInstaller] Descargando ${profileJson.libraries.length} librerías...`);
 
     let failedLibs = [];
 
@@ -203,17 +197,17 @@ class QuiltInstaller {
     }
 
     if (failedLibs.length > 0) {
-      console.warn(`[QuiltInstaller] Terminó con errores en ${failedLibs.length} librerías:`);
+      console.warn(`[LegacyFabricInstaller] Terminó con errores en ${failedLibs.length} librerías:`);
       failedLibs.forEach(lib => console.warn(`  - ${lib}`));
       return false;
     }
 
-    console.log(`[QuiltInstaller] Instalación completa para ${versionId}`);
-    return true;
+    console.log(`[LegacyFabricInstaller] Instalación completa para ${versionId}`);
+    process.exit(0);
   }
 
   static async run(minecraftPath, gameVersion) {
-    const installer = new QuiltInstaller(minecraftPath, gameVersion);
+    const installer = new LegacyFabricInstaller(minecraftPath, gameVersion);
     const result = await installer.install();
 
     if (result) {
@@ -226,4 +220,4 @@ class QuiltInstaller {
   }
 }
 
-module.exports = QuiltInstaller;
+module.exports = LegacyFabricInstaller;

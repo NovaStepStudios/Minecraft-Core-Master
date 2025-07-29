@@ -10,13 +10,14 @@ Desarrollado por **NovaStep Studios** con un enfoque en rendimiento, control tot
 
 Soporte : [StepLauncher](https://discord.gg/YAqpTWQByM)
 
+Documentacion / Docs : [Minecraft-Core-Master-Docs](https://minecraft-core-master.web.app/)
+
 ## Apoyar
 
 Mercado Pago :
  - CVU : 0000003100051190149138
  - Alias : stepnickasantiago
 
-[![Invitame un café en cafecito.app](https://cdn.cafecito.app/imgs/buttons/button_5.svg)](https://cafecito.app/novastepstudios)
 ---
 ## Instalacion
 
@@ -71,7 +72,7 @@ Download.downloadAll("./.minecraft", "1.12.2", false, true);
 |------------------|------------|-----------------------------------------------------------------------------|
 | `root`           | `string`   | Ruta base donde se descargará e instalará Minecraft.                        |
 | `version`        | `string`   | Versión de Minecraft a instalar (ej: `"1.12.2"`).                           |
-| `downloadJava`   | `boolean`  | Si se debe descargar Java (`true`) o no (`false`).                          |
+| `downloadJava`   | `boolean`  | Si se debe descargar Java (`true`) o no (`false`), elige Java especifico (`Java20`, `Java24`,`Java17`).                          |
 | `fastMode`       | `boolean`  | Si se debe activar el modo rápido (descarga todo sin pasos intermedios).   |
 
 
@@ -116,17 +117,43 @@ installer.start()
 
 Clase que permite **lanzar Minecraft** con control total: configuración de memoria, ruta Java, ventana, argumentos, y sistema de logs y errores con persistencia.
 
-#### 🚀 Ejemplo práctico
+#### 🚀 Ejemplo práctico ( Basico )
 
 ```js
-const { spawn } = require('child_process');
-const {MinecraftExecutor} = require('minecraft-core-master');
+const { MinecraftExecutor } = require('minecraft-core-master');
+
+const Launcher = new MinecraftExecutor();
+
+Launcher.start({
+  root: './.minecraft',
+  javaPath: 'C:/Program Files/Java/jre1.8.0_451/bin/javaw.exe', // O simplemente 'java' si está en el PATH
+  memory: { max: '6G', min: '1G' },
+  version: { versionID: '1.12.2-forge-14.23.5.2860', type: 'release' },
+  client: { username: 'SantiagoStepnicka012' },
+  demo: false,  // Modo Demo activado (false por defecto)
+  debug: true,  // Logs detallados activados
+});
+
+// Escuchar eventos importantes
+Launcher.on('debug', console.log);
+Launcher.on('error', console.error);
+Launcher.on('close', (code) => {
+  console.log(`⚠️ Java se cerró con código: ${code}`);
+});
+
+```
+
+#### 😎 Ejemplo práctico ( Avanzado )
+
+```js
+const { MinecraftExecutor } = require('minecraft-core-master');
+const path = require('path');
 
 const Launcher = new MinecraftExecutor();
 
 const opts = {
   root: './.minecraft',
-  javaPath: 'C:/Program Files/Java/jre1.8.0_451/bin/javaw.exe' || 'java',
+  javaPath: 'C:/Program Files/Java/jre1.8.0_451/bin/javaw.exe',
   memory: {
     max: '6G',
     min: '1G',
@@ -137,40 +164,47 @@ const opts = {
   },
   client: {
     username: 'SantiagoStepnicka012',
-    password: 'xxx_Santiago_xxx', // Opcional, para servidores que lo requieran
+    password: 'xxx_Santiago_xxx', // Opcional
+    skinUrl: path.join(__dirname, 'skins', 'skin.png'),  // Personalización de Skin Local
+    capeUrl: path.join(__dirname, 'skins', 'cape.png'),  // Personalización de Capa Local
+    provider: 'microsoft', // 'microsoft' || 'mojang' || 'legacy'
+    email: 'example@gmail.com', // Solo si el provider es 'microsoft' ( AVISO NECESITAS SER MAYOR DE EDAD, PARA LOGUEARTE )
   },
-  demo: false,  // Habilitar modo demo
-  debug: true,  // Mostrar logs detallados
+  demo: false,
+  debug: true,
+  jvmFlags: ['-XX:+UseG1GC', '-Dfml.ignoreInvalidMinecraftCertificates=true'], // Opcional JVM
+  mcFlags: ['--forceUpgrade'], // Opcional Minecraft Args
 };
 
 Launcher.start(opts);
 
-Launcher.on('debug', console.log);
-Launcher.on('error', console.error);
-
-Launcher.on('ready', ({ args, opts }) => {
-  const child = spawn(opts.javaPath, args, {
-    stdio: 'inherit',
-  });
-  child.on('close', (code) => console.log(`⚠️ Java cerrado con código ${code}`));
+// Eventos Detallados
+Launcher.on('debug', msg => console.log(`🟢 [DEBUG] ${msg}`));
+Launcher.on('error', err => console.error(`❌ [ERROR] ${err}`));
+Launcher.on('started', ({ auth, opts, versionData }) => {
+  console.log(`✅ Minecraft iniciado como ${auth.name} (Versión: ${versionData.id})`);
+});
+Launcher.on('close', (code) => {
+  console.log(`⚠️ Java cerrado con código: ${code}`);
 });
 ```
 
+
 #### ⚙️ Argumentos disponibles en `start(opts)`
 
-| Campo       | Tipo                                                     | Descripción                                                     |
-| ----------- | -------------------------------------------------------- | --------------------------------------------------------------- |
-| `root`      | `string`                                                 | Carpeta raíz del juego.                                         |
-| `javaPath`  | `string`                                                 | Ruta a `java` (opcional, se autodetecta si no está).            |
-| `memory`    | `{ min: string, max: string }`                           | Memoria asignada (ej: `"1G"`, `"6G"`).                          |
-| `window`    | `{ width: number, height: number, fullscreen: boolean }` | Tamaño y modo de ventana del juego.                             |
-| `version`   | `{ versionID: string, type: string }`                    | Versión de Minecraft a lanzar.                                  |
-| `client`    | `{ username: string, password?: string }`                | Usuario Mojang u offline; password opcional para servidores.    |
-| `jvm`       | `string[]`                                               | Argumentos JVM adicionales.                                     |
-| `mcArgs`    | `string[]`                                               | Argumentos adicionales para Minecraft.                          |
-| `overrides` | `object`                                                 | Sobrescribe directorios como `assetsDir`, `gameDirectory`, etc. |
-| `demo`      | `boolean`                                                | Activa modo demo.                                               |
-| `debug`     | `boolean`                                                | Muestra logs detallados.                                        |
+| Campo       | Tipo                                                                                                             | Descripción                                                                          | Ejemplo / Notas                                                                         |
+| ----------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `root`      | `string`                                                                                                         | Carpeta raíz donde se almacenarán los datos del juego.                               | `'./.minecraft'`                                                                        |
+| `javaPath`  | `string`                                                                                                         | Ruta al ejecutable de Java (`java` o `javaw.exe`).                                   | `'C:/Program Files/Java/jdk-17/bin/javaw.exe'` o simplemente `'java'`                   |
+| `memory`    | `{ min: string, max: string }`                                                                                   | Cantidad de RAM a usar.                                                              | `{ min: '1G', max: '4G' }`                                                              |
+| `window`    | `{ width: number, height: number, fullscreen: boolean }`                                                         | Configura el tamaño de ventana y modo pantalla completa.                             | `{ width: 1280, height: 720, fullscreen: false }`                                       |
+| `version`   | `{ versionID: string, type: string }`                                                                            | Versión de Minecraft a iniciar.                                                      | `{ versionID: '1.20.1', type: 'release' }`                                              |
+| `client`    | `{ username: string, password?: string, provider?: string, skinUrl?: string, capeUrl?: string, email?: string }` | Datos de la cuenta o perfil offline, personalización de skin/capa y método de login. | `username` es obligatorio. `provider` puede ser: `'microsoft'`, `'mojang'`, `'legacy'`. |
+| `jvmFlags`  | `string[]`                                                                                                       | Argumentos avanzados para la JVM (rendimiento, compatibilidad, debug).               | `['-XX:+UseG1GC', '-Dfml.ignoreInvalidMinecraftCertificates=true']`                     |
+| `mcFlags`   | `string[]`                                                                                                       | Argumentos adicionales para Minecraft (ej: `--forceUpgrade`, `--server`).            | `['--forceUpgrade']`                                                                    |
+| `overrides` | `{ assetsDir?: string, gameDir?: string, librariesDir?: string }`                                                | Sobrescribe rutas personalizadas para carpetas internas del juego.                   | `{ assetsDir: './custom-assets', gameDir: './profiles/Santi' }`                         |
+| `demo`      | `boolean`                                                                                                        | Activa el modo demo de Minecraft (sin cuenta oficial).                               | `true` o `false`                                                                        |
+| `debug`     | `boolean`                                                                                                        | Activa los logs detallados de cada paso durante la ejecución.                        | `true` o `false`                                                                        |
 
 ---
 
@@ -193,7 +227,7 @@ Launcher.on('ready', ({ args, opts }) => {
 
 ### 📁 Gestión avanzada de logs y errores
 
-* Los logs críticos y reportes de fallos se almacenan automáticamente en la carpeta `root/temp/` bajo archivos con prefijo `mc_crash*.log`, permitiendo una inspección detallada para diagnósticos rápidos y precisos.
+* Los logs críticos y reportes de fallos se almacenan automáticamente en la carpeta `root/logs` bajo archivos con prefijo `minecraft-core-master*.log`, permitiendo una inspección detallada para diagnósticos rápidos y precisos.
 * Toda la salida estándar (`stdout`) y salida de error (`stderr`) del proceso Minecraft se expone en tiempo real a través de eventos, lo que facilita la integración con GUIs personalizadas, consolas o herramientas de monitoreo remoto.
 * La arquitectura basada en eventos permite capturar errores de manera proactiva y reaccionar ante ellos sin bloquear el flujo del programa, garantizando una experiencia estable para el usuario final.
 
@@ -201,11 +235,11 @@ Launcher.on('ready', ({ args, opts }) => {
 
 ## 📜 Scripts de prueba y demostración (github)
 
-Incluimos ejemplos robustos en la carpeta `examples/` para que puedas probar cada componente de forma independiente o integrada. Estos scripts incluyen manejo de eventos detallado, seguimiento de progreso y captura de errores:
+Incluimos ejemplos robustos en la carpeta `test/` para que puedas probar cada componente de forma independiente o integrada. Estos scripts incluyen manejo de eventos detallado, seguimiento de progreso y captura de errores:
 
 ```bash
-node test/MinecraftDownloader.js      # Descarga y prepara cualquier versión de Minecraft con validación.
-node test/MinecraftExecutor.js        # Ejecuta Minecraft con configuración avanzada y monitoreo. En Mantenimiento
+node test/Download.js      # Descarga y prepara cualquier versión de Minecraft con validación.
+node test/Start.js        # Ejecuta Minecraft con configuración avanzada y monitoreo. En Mantenimiento
 ```
 
 Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo extender o integrar Minecraft-Core-Master en tus proyectos.

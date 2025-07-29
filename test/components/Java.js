@@ -1,4 +1,4 @@
-const JavaInstaller = require("../components/downloader/Minecraft/Java-Installer");
+const JavaInstaller = require("../../components/downloader/Minecraft/Java-Installer");
 
 const installer = new JavaInstaller("./.minecraft", "Java17", "./java-urls.json");
 

@@ -1,4 +1,4 @@
-const MinecraftLibrariesDownloader = require("../components/downloader/Minecraft/Minecraft-Libraries");
+const MinecraftLibrariesDownloader = require("../../components/downloader/Minecraft/Minecraft-Libraries");
 
 const downloader = new MinecraftLibrariesDownloader("./.minecraft", "1.20.4");
 downloader.on("progress", ({ current, total, percent }) => {

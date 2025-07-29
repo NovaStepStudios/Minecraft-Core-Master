@@ -1,5 +1,7 @@
+"use strict";
 const EventEmitter = require("events");
-const path = require("path");
+const fs = require('fs');
+const path = require('path');
 
 const MinecraftNativesDownloader    = require("./Minecraft/Minecraft-Natives.js");
 const MinecraftLibrariesDownloader  = require("./Minecraft/Minecraft-Libraries.js");
@@ -39,6 +41,13 @@ class MinecraftDownloader extends EventEmitter {
           this.#emitStepDone("Logging XML");
           this.emit('info', `[Minecraft-Core-Master || Downloader] Logging XML descargado en: ${xmlPath}`);
         } catch (error) {
+          this._saveErrorLog(error, {
+            task: 'Logging XML',
+            version: version.id || version,
+            root,
+            step: 'downloadLoggingXml',
+            profile: 'UnknownUser'
+          });
           this.emit('error', new Error(`[Minecraft-Core-Master || Downloader > XML] Fallo descarga Logging XML: ${error.message}`));
         }
       });
@@ -67,7 +76,7 @@ class MinecraftDownloader extends EventEmitter {
     }
   }
 
-  async #runJavaInstaller(root, jvmVersion) {
+  async #runJavaInstaller(root, version, jvmVersion) {
     return new Promise((resolve, reject) => {
       const installer = new JavaInstaller(root, jvmVersion);
 
@@ -80,7 +89,17 @@ class MinecraftDownloader extends EventEmitter {
         resolve();
       });
 
-      installer.on("error", reject);
+      installer.on("error", (err) => {
+        this._saveErrorLog(err, {
+          task: 'Java Installer',
+          version: typeof version === 'string' ? version : version.id,
+          root,
+          step: 'Java',
+          profile: 'UnknownUser'
+        });
+        reject(err);
+      });
+
       installer.start();
     });
   }
@@ -98,11 +117,52 @@ class MinecraftDownloader extends EventEmitter {
         resolve();
       });
 
-      instance.on("error", reject);
+      instance.on("error", (err) => {
+        this._saveErrorLog(err, {
+          task: name,
+          version: version.id || version,
+          root: root,
+          step: name,
+          profile: 'UnknownUser'
+        });
+        reject(err);
+      });
+
       instance.start();
     });
   }
+  _saveErrorLog(err, context = {}) {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
+    const fileName = `minecraft-core-master_step_download_${dateStr}_${timeStr}_${context.profile || 'UnknownUser'}.log`;
 
+    const logContent = `
+    =========== MINECRAFT CORE MASTER ERROR LOG ===========
+    Date         : ${now.toISOString()}
+    Profile      : ${context.profile || 'UnknownUser'}
+    Version      : ${context.version || 'UnknownVersion'}
+    OS           : ${process.platform}
+    Component    : Downloader -> ${context.task || 'General'}
+    Step         : ${context.step || 'N/A'}
+    Progress     : ${context.progress || '0%'}
+    Root         : ${context.root || 'UnknownRoot'}
+
+    ERROR MESSAGE:
+    ${err.message}
+
+    STACKTRACE:
+    ${err.stack}
+    =======================================================
+    `;
+
+    const logDir = path.resolve(context.root || './', 'logs');
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+
+    const logPath = path.join(logDir, fileName);
+    fs.writeFileSync(logPath, logContent, 'utf-8');
+    console.error(`❌ [ERROR LOG] Guardado en: ${logPath}`);
+  }
   #emitProgress(type, percent) {
     const globalPercent = (((this.completedSteps + percent / 100) / this.totalSteps) * 100).toFixed(2);
     this.emit("progress", {

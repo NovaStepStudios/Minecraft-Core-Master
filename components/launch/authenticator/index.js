@@ -1,12 +1,11 @@
+"use strict";
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { v3: uuidv3 } = require('uuid');
 const https = require('https');
 const AuthenticatorMicrosoft = require('./AuthenticatorMicrosoft');
 
 const MOJANG_AUTH_URL = 'https://authserver.mojang.com/authenticate';
-
 const DEFAULT_LAUNCHER_VERSION = {
   name: 'player',
   format: 1,
@@ -37,14 +36,7 @@ function buildTextures(username, uuid, skinUrl, capeUrl) {
   if (skinUrl) textures.textures.SKIN = { url: skinUrl };
   if (capeUrl) textures.textures.CAPE = { url: capeUrl };
   const value = Buffer.from(JSON.stringify(textures)).toString('base64');
-  return {
-    name: 'textures',
-    value,
-  };
-}
-
-function getLauncherProfilesPath(rootDir) {
-  return path.join(rootDir, 'launcher_profiles.json');
+  return { name: 'textures', value };
 }
 
 async function readProfiles(filePath) {
@@ -69,12 +61,10 @@ async function writeProfiles(filePath, data) {
 }
 
 async function saveOrUpdateUserProfile(root, userProfile) {
-  const profilesPath = getLauncherProfilesPath(root);
+  const profilesPath = path.join(root, 'launcher_profiles.json');
   const profilesData = await readProfiles(profilesPath);
 
-  if (!profilesData.clientToken) {
-    profilesData.clientToken = crypto.randomUUID();
-  }
+  if (!profilesData.clientToken) profilesData.clientToken = crypto.randomUUID();
 
   profilesData.profiles[userProfile.uuid] = {
     name: userProfile.name,
@@ -86,9 +76,7 @@ async function saveOrUpdateUserProfile(root, userProfile) {
   profilesData.authenticationDatabase[userProfile.uuid] = {
     accessToken: userProfile.accessToken || '',
     username: userProfile.name,
-    profiles: {
-      [userProfile.uuid]: { displayName: userProfile.name },
-    },
+    profiles: { [userProfile.uuid]: { displayName: userProfile.name } },
     userProperties: userProfile.userProperties || '[{}]',
     displayName: userProfile.name,
     type: userProfile.type,
@@ -99,8 +87,6 @@ async function saveOrUpdateUserProfile(root, userProfile) {
     profile: userProfile.uuid,
   };
 
-  profilesData.launcherVersion = DEFAULT_LAUNCHER_VERSION;
-
   await writeProfiles(profilesPath, profilesData);
 }
 
@@ -108,7 +94,6 @@ function postJSON(url, data) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(data);
     const { hostname, pathname } = new URL(url);
-
     const options = {
       hostname,
       path: pathname,
@@ -122,7 +107,7 @@ function postJSON(url, data) {
 
     const req = https.request(options, (res) => {
       let raw = '';
-      res.on('data', (chunk) => raw += chunk);
+      res.on('data', (chunk) => (raw += chunk));
       res.on('end', () => resolve(raw));
     });
 
@@ -132,22 +117,39 @@ function postJSON(url, data) {
   });
 }
 
-async function loginMojang(root, username, password) {
-  if (!username || !password) throw new Error('[✖] Username y password requeridos para Mojang');
+class UserSession {
+  constructor(uuid, username, accessToken, type, password = '') {
+    this.uuid = uuid;
+    this.username = username;
+    this.accessToken = accessToken;
+    this.type = type;
+    this._password = password; // en memoria para usar en /login
+  }
 
+  getPassword() {
+    return this._password;
+  }
+
+  getAuthHeader() {
+    return `Bearer ${this.accessToken}`;
+  }
+
+  asProfile() {
+    return {
+      uuid: this.uuid,
+      name: this.username,
+      accessToken: this.accessToken,
+      type: this.type,
+    };
+  }
+}
+
+async function loginMojang(root, username, password) {
+  if (!username || !password) throw new Error('Username y password requeridos para Mojang');
   console.log(`[Auth] Iniciando sesión Mojang para ${username}...`);
 
-  const profilesPath = getLauncherProfilesPath(root);
-  const profilesData = await readProfiles(profilesPath);
-  let existingProfileEntry = Object.entries(profilesData.profiles)
-    .find(([, p]) => p.name === username && p.type === 'mojang');
-
-  let clientToken = profilesData.clientToken || crypto.randomUUID();
-  if (existingProfileEntry) {
-    const [uuid] = existingProfileEntry;
-    const authData = profilesData.authenticationDatabase[uuid];
-    if (authData && authData.accessToken) clientToken = authData.accessToken;
-  }
+  const profilesData = await readProfiles(path.join(root, 'launcher_profiles.json'));
+  const clientToken = profilesData.clientToken || crypto.randomUUID();
 
   let raw;
   try {
@@ -159,42 +161,32 @@ async function loginMojang(root, username, password) {
       requestUser: true,
     });
   } catch (err) {
-    throw new Error(`[✖] Error al conectar con Mojang: ${err.message}`);
+    throw new Error(`Error al conectar con Mojang: ${err.message}`);
   }
 
-  if (!raw) throw new Error('[✖] Respuesta vacía de Mojang');
-
-  let json;
-  try {
-    json = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(`[✖] Error parseando respuesta Mojang: ${err.message}`);
-  }
-
-  if (json.error) throw new Error(`[✖] ${json.errorMessage || json.error}`);
+  const json = JSON.parse(raw);
+  if (json.error) throw new Error(json.errorMessage || json.error);
 
   const userProperties = parseProps(json.user?.properties);
 
   const userProfile = {
-    uuid: json.selectedProfile?.id,
-    name: json.selectedProfile?.name,
+    uuid: json.selectedProfile.id,
+    name: json.selectedProfile.name,
     accessToken: json.accessToken,
-    clientToken: json.clientToken || clientToken,
     userProperties: [{ name: 'textures', value: Buffer.from(userProperties).toString('base64') }],
-    user_properties: userProperties,
     type: 'mojang',
   };
 
   await saveOrUpdateUserProfile(root, userProfile);
   console.log(`[✔] Login exitoso Mojang: ${userProfile.name}`);
-  return userProfile;
+
+  return new UserSession(userProfile.uuid, userProfile.name, userProfile.accessToken, 'mojang', password);
 }
 
 async function loginMicrosoft(root, username, password, email) {
   if (!username || !password || !email)
-    throw new Error('[✖] Username, password y email requeridos para Microsoft');
-
-  console.log(`[Auth] Iniciando sesión Microsoft para ${username} (email: ${email})...`);
+    throw new Error('Username, password y email requeridos para Microsoft');
+  console.log(`[Auth] Iniciando sesión Microsoft para ${username}...`);
 
   const msAuthenticator = new AuthenticatorMicrosoft();
   const msProfile = await msAuthenticator.login(username, password, email);
@@ -202,17 +194,15 @@ async function loginMicrosoft(root, username, password, email) {
   const userProfile = {
     uuid: msProfile.id,
     name: msProfile.name || username,
-    email,
     accessToken: msProfile.access_token,
-    clientToken: msProfile.access_token,
     userProperties: [{ name: 'textures', value: Buffer.from('{}').toString('base64') }],
-    user_properties: '{}',
     type: 'microsoft',
   };
 
   await saveOrUpdateUserProfile(root, userProfile);
   console.log(`[✔] Login exitoso Microsoft: ${userProfile.name}`);
-  return userProfile;
+
+  return new UserSession(userProfile.uuid, userProfile.name, userProfile.accessToken, 'microsoft', password);
 }
 
 function getOfflineUUID(username, password = '') {
@@ -228,52 +218,32 @@ function getOfflineUUID(username, password = '') {
   ].join('-');
 }
 
-function buildTexturesLocal(username, uuid, skinUrl, capeUrl) {
-  const textures = {
-    timestamp: Date.now(),
-    profileId: uuid.replace(/-/g, ''),
-    profileName: username,
-    textures: {},
-  };
-  if (skinUrl) textures.textures.SKIN = { url: skinUrl };
-  if (capeUrl) textures.textures.CAPE = { url: capeUrl };
-  const value = Buffer.from(JSON.stringify(textures)).toString('base64');
-  return {
-    name: 'textures',
-    value,
-  };
-}
-
 async function loginLegacy(root, username, password, skinUrl, capeUrl) {
-  if (!username) throw new Error('[✖] Username es requerido para cuenta legacy');
-
+  if (!username) throw new Error('Username es requerido para cuenta legacy');
   console.log(`[Auth] Usando cuenta legacy offline: ${username}`);
 
   const uuid = getOfflineUUID(username, password || '');
   const accessToken = crypto.randomUUID();
-  const textures = buildTexturesLocal(username, uuid, skinUrl, capeUrl);
-
-  const userProperties = [textures];
+  const textures = buildTextures(username, uuid, skinUrl, capeUrl);
 
   const userProfile = {
     uuid,
     name: username,
     accessToken,
-    clientToken: accessToken,
-    userProperties,
-    user_properties: JSON.stringify([textures]),
+    userProperties: [textures],
     type: 'legacy',
   };
 
   await saveOrUpdateUserProfile(root, userProfile);
   console.log(`[✔] Perfil offline creado: ${username}`);
 
-  return userProfile;
+  return new UserSession(uuid, username, accessToken, 'legacy', password);
 }
 
 module.exports = {
+  UserSession,
   async login(client, options = {}) {
-    const { root = './', versionId = 'latest-release', gameDir = './' } = options;
+    const { root = './' } = options;
     const provider = client.provider || 'legacy';
 
     switch (provider) {
