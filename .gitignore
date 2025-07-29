@@ -1,2 +1,3 @@
 .minecraft/
 node_modules/
+.env

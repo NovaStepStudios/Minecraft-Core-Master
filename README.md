@@ -230,6 +230,7 @@ Launcher.on('close', (code) => {
 * Los logs críticos y reportes de fallos se almacenan automáticamente en la carpeta `root/logs` bajo archivos con prefijo `minecraft-core-master*.log`, permitiendo una inspección detallada para diagnósticos rápidos y precisos.
 * Toda la salida estándar (`stdout`) y salida de error (`stderr`) del proceso Minecraft se expone en tiempo real a través de eventos, lo que facilita la integración con GUIs personalizadas, consolas o herramientas de monitoreo remoto.
 * La arquitectura basada en eventos permite capturar errores de manera proactiva y reaccionar ante ellos sin bloquear el flujo del programa, garantizando una experiencia estable para el usuario final.
+* Configurar Microsoft Azure, descarga el repositorio y crea un archivo .env en "components/launch/authenticator/" crea un archivo .env sin nombre solo .env, y coloca [MS_CLIENT_ID=`Tu Client ID de Azure`, MS_CLIENT_SECRET=`Cliente Secreto de Azure`]
 
 ---
 
