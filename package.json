@@ -31,15 +31,6 @@
   "author": "NovaStepStudios",
   "license": "MIT",
   "description": "Minecraft-core-master is a powerful JavaScript library that allows you to easily download official Minecraft versions, including all necessary libraries, assets, and native files, directly from Mojang servers. Additionally, it supports launching Minecraft with customizable options",
-  "scripts": {
-    "Download:Assets": "node test/components/Assets",
-    "Download:Client": "node test/components/Client",
-    "Download:Libraries": "node test/components/Libraries",
-    "Download:Natives": "node test/components/Natives",
-    "Download:Patchs": "node test/components/Java",
-    "Start:Minecraft": "node test/Start",
-    "Download:Minecraft": "node test/Download"
-  },
   "repository": {
     "type": "github",
     "url": "https://github.com/NovaStepStudios/Minecraft-Core-Master"
@@ -58,3 +49,4 @@
     "open": "^10.2.0"
   }
 }
+
