@@ -10,7 +10,7 @@ Desarrollado por **NovaStep Studios** con un enfoque en rendimiento, control tot
 
 Soporte : [StepLauncher](https://discord.gg/YAqpTWQByM)
 
-Documentacion / Docs : [Minecraft-Core-Master-Docs](https://minecraft-core-master.web.app/)
+<!-- Documentacion / Docs : [Minecraft-Core-Master-Docs](https://minecraft-core-master.web.app/) -->
 
 ## Apoyar
 
@@ -23,7 +23,7 @@ Mercado Pago :
 
 Instalacion `npm i minecraft-core-master`
 
-Dependencias que utiliza : **node-fetch, p-limit, tar, unzipper, uuid**
+Dependencias que utiliza : **node-fetch, p-limit, tar, unzipper, cheerio, uuid,express ( AuthMicrosfot ),dotenv ( IDAzure ), open**
 
 
 ## 🚀 Componentes principales
@@ -83,7 +83,7 @@ Download.downloadAll("./.minecraft", "1.12.2", false, true);
 * `"error"` → Fallos críticos o interrupciones.
 
 ---
-<!-- 
+
 ### 🛠️ `LoaderInstaller`
 
 Instala modloaders como **Forge**,**OptiFine**,**NeoForge**,**Quilt**,**Fabric**, sobre una instalación existente de Minecraft.
@@ -91,25 +91,46 @@ Instala modloaders como **Forge**,**OptiFine**,**NeoForge**,**Quilt**,**Fabric**
 #### 📦 Ejemplo de uso
 
 ```js
-const { LoaderInstaller } = require("minecraft-core-master");
+const { MinecraftLoaders } = require('../../main.js');
 
-const installer = new LoaderInstaller("./Minecraft", "1.20.4-forge-47.2.0", "Forge");
+const installer = MinecraftLoaders.neoforge({
+    root: '.minecraft', // Ruta a la carpeta raíz
+    version: '21.4.0-beta' // Versión de NeoForge
+});
 
-installer.on("progress", (msg) => console.log("[Progreso]", msg));
-installer.on("done", (msg) => console.log("[✔]", msg));
-installer.on("error", (err) => console.error("[❌]", err));
+installer.on('data', (msg) => {
+    console.log(`[NeoForge] ${msg}`);
+});
 
-installer.start()
-  .then(() => console.log("✅ Instalación completada"))
-  .catch((err) => console.error("❌ Error crítico:", err));
+installer.on('done', () => {
+    console.log("✅ NeoForge instalado correctamente.");
+});
+
+installer.on('error', (err) => {
+    console.error("❌ Error durante la instalación:", err);
+});
 ```
+```js
+const {MinecraftLoaders} = require('../../main.js');
+MinecraftLoaders.forge({
+  root: './.minecraft',
+  version: '1.16.5-36.2.20',
+}).on('data', (msg) => {
+  console.log(`[Forge] Progreso: ${msg.progress}/${msg.total}`);
+}).on('done', () => {
+  console.log('[Forge] Instalación completada');
+}).on('error', console.error);
+```
+Otros mas! ( Fabric, Forge, Neoforge, LegacyFabric, Quilt ) [ View Github In Test Folder Please ]
+
+[TestLoaders]('https://github.com/NovaStepStudios/Minecraft-Core-Master/tree/main/test/Loaders')
 
 #### ℹ️ Notas
 
 * La carpeta `destDir` debe tener una instalación válida de Minecraft.
 * Requiere **Java en PATH** para instalar Forge.
 * No descarga Minecraft base, solo inyecta el modloader deseado.
---- -->
+---
 
 ### 🎮 `MinecraftExecutor`
 
@@ -207,19 +228,6 @@ Launcher.on('close', (code) => {
 | `debug`     | `boolean`                                                                                                        | Activa los logs detallados de cada paso durante la ejecución.                        | `true` o `false`                                                                        |
 
 ---
-
-## Supported versions / Versiones soportadas
-
-| Versión / Cliente | ¿Soportada? |
-| ----------------- | ----------- |
-| **Vanilla**       | ✅ Sí        |
-| **Forge**         | ✅ Sí        |
-| **Optifine**      | ✅ Sí        |
-| **NeoForge**      | ✅ Sí        |
-| **Fabric**        | ✅ Sí        |
-| **Quilt**         | ✅ Sí        |
-| **Battly Client** | ✅ Sí        |
-| **BatMod**        | ✅ Sí        |
 
 > **Nota:** Este proyecto soporta el lanzamiento y gestión de **todas las versiones oficiales de Minecraft**, desde las más recientes hasta las más antiguas, incluyendo snapshots, betas, alphas y versiones históricas como la legendaria **rd-132211**. No importa qué tan vintage o moderna sea la versión, Minecraft-Core-Master la ejecutará con total estabilidad y rendimiento.
 

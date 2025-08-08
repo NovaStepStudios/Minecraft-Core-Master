@@ -34,20 +34,35 @@ const getLibPath = (lib, classifier = null, ext = 'jar') => {
 
 const findFinalJarVersionID = (root, startID) => {
   let currentID = startID;
+  let lastValidID = null;
+
   while (true) {
     const jsonPath = path.join(root, 'versions', currentID, `${currentID}.json`);
-    if (!fs.existsSync(jsonPath)) break;
+    const jarPath = path.join(root, 'versions', currentID, `${currentID}.jar`);
+
+    if (!fs.existsSync(jsonPath) || !fs.existsSync(jarPath)) {
+      // Si no existe el JSON o el JAR para esta versión, salimos
+      break;
+    }
+
+    lastValidID = currentID;
+
     try {
       const json = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-      if (!json.inheritsFrom) break;
+      if (!json.inheritsFrom) break; // No hay versión padre, esta es la final
       currentID = json.inheritsFrom;
     } catch (e) {
       console.warn(`[Classpath] Error leyendo ${jsonPath}: ${e.message}`);
       break;
     }
   }
-  return currentID;
+
+  if (!lastValidID) {
+    throw new Error(`[Classpath] No se encontró versión base con JSON y JAR para: ${startID}`);
+  }
+  return lastValidID;
 };
+
 
 const mergeInheritedLibraries = (root, versionData) => {
   let merged = [...(versionData.libraries || [])];
@@ -93,7 +108,6 @@ const tryAddLib = (libPath, classPathSet, classPath) => {
   }
 };
 
-// Filtra solo jars relevantes dentro de maven2 para no saturar el classpath
 const addFilteredMaven2Jars = (maven2Dir, classPathSet, classPath, whitelist = []) => {
   if (!fs.existsSync(maven2Dir)) return;
   const walk = (dir) => {
@@ -132,12 +146,14 @@ const resolveLibPath = (libDir, maven2Dir, lib) => {
 
 module.exports = {
   /**
-   * Construye el classpath para la versión dada, detectando automáticamente si se debe incluir maven2.
+   * Construye el classpath y module-path (si es necesario) para la versión dada.
    * @param {string} root Root folder del launcher
    * @param {object} versionData JSON con datos de versión
+   * @returns {object} { classPath: string[], modulePath: string[] }
    */
   async build(root, versionData) {
     const classPath = [];
+    const modulePath = [];
     const libDir = path.join(root, 'libraries');
     const maven2Dir = path.join(root, 'maven2');
 
@@ -210,14 +226,12 @@ module.exports = {
     tryAddLib(jarPath, classPathSet, classPath);
 
     // Detección automática para incluir jars maven2:
-    // Buscamos en libs indicios claros de mod loaders para activar inclusión maven2
     const modLoadersKeywords = ['forge', 'neoforge', 'fabric', 'liteloader', 'fml', 'quilt'];
     const usesModLoader = libs.some(lib =>
       lib.name && modLoadersKeywords.some(keyword => lib.name.toLowerCase().includes(keyword))
     );
 
     if (usesModLoader) {
-      // Whitelist: solo jars críticos para mod loaders
       const whitelist = ['guava', 'log4j', 'jopt-simple', 'asm', 'objenesis', 'fastutil'];
       addFilteredMaven2Jars(maven2Dir, classPathSet, classPath, whitelist);
       console.log(`[Classpath] Añadidos jars maven2 filtrados automáticamente para mod loaders`);
@@ -225,8 +239,25 @@ module.exports = {
       console.log(`[Classpath] No se detectaron mod loaders, no se añaden jars maven2`);
     }
 
-    console.log(`[Classpath] Total librerías añadidas: ${classPath.length}`);
+    // === NeoForge Module-Path Handling ===
+    const neoforgeKeywords = ['neoforge', 'fmlcore', 'fmlcore-mod'];
+    if (libs.some(lib => lib.name?.toLowerCase().includes('neoforge'))) {
+      console.log('[Classpath] Detección de NeoForge activa, procesando module-path...');
+      for (const libPath of classPath.slice()) {
+        const filename = path.basename(libPath).toLowerCase();
+        if (neoforgeKeywords.some(keyword => filename.includes(keyword))) {
+          modulePath.push(libPath);
+          classPathSet.delete(libPath);
+          const index = classPath.indexOf(libPath);
+          if (index !== -1) classPath.splice(index, 1);
+          console.log(`[Classpath] Moviendo a module-path: ${filename}`);
+        }
+      }
+    }
 
-    return classPath;
+    console.log(`[Classpath] Total librerías en classpath: ${classPath.length}`);
+    console.log(`[Classpath] Total librerías en module-path: ${modulePath.length}`);
+
+    return { classPath, modulePath };
   }
 };

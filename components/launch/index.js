@@ -51,7 +51,7 @@ class MinecraftExecutor extends EventEmitter {
 
       const AUTHLIB_NAME = 'com.mojang:authlib:1.5.25';
       if (!(versionData.libraries || []).some(lib => lib.name === AUTHLIB_NAME)) {
-        debug('Agregando authlib a mano');
+        debug('Agregando AutoLib a mano');
         versionData.libraries.push({
           name: AUTHLIB_NAME,
           url: 'https://libraries.minecraft.net/',
@@ -70,7 +70,8 @@ class MinecraftExecutor extends EventEmitter {
       await NativesHandler.setup(opts.root, versionData.id);
 
       debug('Construyendo classpath...');
-      const classPath = await ClassPathHandler.build(opts.root, versionData);
+      const { classPath, modulePath } = await ClassPathHandler.build(opts.root, versionData);
+
 
       debug('Preparando argumentos de ejecución...');
       const args = ArgumentsHandler.build({
@@ -78,6 +79,7 @@ class MinecraftExecutor extends EventEmitter {
         version: versionData,
         auth,
         classPath,
+        modulePath,
       });
 
       debug(`Ejecutando Java: ${opts.javaPath} ${args.join(' ')}`);
@@ -119,18 +121,22 @@ class MinecraftExecutor extends EventEmitter {
         debug(`Java cerrado con código ${code}`);
         if (code !== 0) {
           const output = (stderr + stdout).trim() || '(sin salida)';
-          this._saveErrorLog(err, {
+          const error = new Error(`Java finalizó con código ${code}\nSalida:\n${output}`);
+          this._saveErrorLog(error, {
             profile: opts.client.username,
             version: opts.version.versionID,
             javaPath: opts.javaPath,
             component: 'Executor',
-            root: opts.root
+            root: opts.root,
+            stdout,
+            stderr,
           });
-          this.emit('error', new Error(`Java finalizó con código ${code}\nSalida:\n${output}`));
+          this.emit('error', error);
         } else {
           this.emit('close', code);
         }
       });
+
 
       this.emit('started', { auth, opts, versionData });
 

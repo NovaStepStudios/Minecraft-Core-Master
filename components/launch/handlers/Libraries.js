@@ -29,8 +29,6 @@ const getLibPath = (lib, classifier = null, ext = 'jar') => {
 const getMaven2PathFromURL = (url) => {
   try {
     const urlObj = new URL(url);
-    // El path incluye el /maven2/ parte, lo removemos y usamos lo que sigue
-    // ej: /maven2/com/google/guava/guava/17.0/guava-17.0.jar
     const mavenIndex = urlObj.pathname.indexOf('/maven2/');
     if (mavenIndex === -1) return null;
     const relPath = urlObj.pathname.substring(mavenIndex + '/maven2/'.length);
@@ -43,9 +41,46 @@ const getMaven2PathFromURL = (url) => {
 // Función recursiva para juntar todas las librerías heredadas
 async function gatherLibraries(root, versionId) {
   const versionJsonPath = path.join(root, 'versions', versionId, `${versionId}.json`);
+
   if (!fs.existsSync(versionJsonPath)) {
-    throw new Error(`No existe el JSON de la versión ${versionId}`);
+    // Intentar fallback para loaders o versiones que no tienen JSON propio
+    // Por ejemplo, si versionId es 'quilt-loader-0.29.1-1.20', intentar '1.20'
+    console.warn(`[libraries.js] No existe JSON para la versión ${versionId}, intentando fallback...`);
+
+    // Intentar extraer una versión base de versionId, asumiendo formato usual 'modname-version-baseversion'
+    const fallbackVersion = (() => {
+      const parts = versionId.split('-');
+      // Buscar la parte que parezca versión base (último elemento, o elementos finales que parecen versión Minecraft)
+      // Ejemplo simple: tomar el último segmento si contiene números y puntos
+      for (let i = parts.length - 1; i >= 0; i--) {
+        if (/^\d+(\.\d+)*$/.test(parts[i])) return parts[i];
+      }
+      // Si no encuentra fallback válido, devolver null
+      return null;
+    })();
+
+    if (fallbackVersion) {
+      const fallbackPath = path.join(root, 'versions', fallbackVersion, `${fallbackVersion}.json`);
+      if (fs.existsSync(fallbackPath)) {
+        console.log(`[libraries.js] Usando fallback versión base ${fallbackVersion}`);
+        const fallbackData = JSON.parse(fs.readFileSync(fallbackPath, 'utf-8'));
+        let libs = fallbackData.libraries || [];
+
+        if (fallbackData.inheritsFrom) {
+          const parentLibs = await gatherLibraries(root, fallbackData.inheritsFrom);
+          const allLibsMap = new Map();
+          for (const lib of parentLibs) allLibsMap.set(lib.name, lib);
+          for (const lib of libs) allLibsMap.set(lib.name, lib);
+          libs = Array.from(allLibsMap.values());
+        }
+
+        return libs;
+      }
+    }
+
+    throw new Error(`No existe el JSON de la versión ${versionId} ni fallback posible`);
   }
+
   const versionData = JSON.parse(fs.readFileSync(versionJsonPath, 'utf-8'));
 
   let libs = versionData.libraries || [];
@@ -74,11 +109,9 @@ module.exports = {
     const allLibs = [...libs, ...extraLibs.map(url => ({ url }))];
 
     for (const lib of allLibs) {
-      // Si lib es objeto con name (oficial)
       if (lib.name) {
         if (!isAllowed(lib.rules)) continue;
 
-        // Artifact
         if (lib.downloads?.artifact) {
           const libPath = getLibPath(lib);
           const fullPath = path.join(libDir, libPath);
@@ -88,7 +121,6 @@ module.exports = {
           }
         }
 
-        // Classifiers
         if (lib.downloads?.classifiers) {
           for (const [classifier, info] of Object.entries(lib.downloads.classifiers)) {
             if (!info || !info.url) continue;
@@ -104,9 +136,7 @@ module.exports = {
             }
           }
         }
-      }
-      // Si lib es objeto con url (extra libs)
-      else if (lib.url) {
+      } else if (lib.url) {
         const relPath = getMaven2PathFromURL(lib.url);
         if (!relPath) {
           console.warn(`[libraries.js] URL no válida o no Maven2: ${lib.url}`);

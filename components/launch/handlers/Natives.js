@@ -53,13 +53,38 @@ async function loadVersionTree(root, versionID, visited = new Set()) {
 
   const versionJsonPath = path.join(root, 'versions', versionID, `${versionID}.json`);
 
-  if (!(await fs.stat(versionJsonPath).catch(() => false))) {
-    throw new Error(`[Natives] No se encontró JSON de versión: ${versionJsonPath}`);
+  // Intentar leer JSON versión directamente
+  let json;
+  try {
+    const content = await fs.readFile(versionJsonPath, 'utf-8');
+    json = JSON.parse(content);
+  } catch {
+    console.warn(`[Natives] No se encontró JSON para la versión ${versionID}, intentando fallback...`);
+
+    // Intentar fallback sacando una versión base del versionID
+    const fallbackVersion = (() => {
+      const parts = versionID.split('-');
+      for (let i = parts.length - 1; i >= 0; i--) {
+        if (/^\d+(\.\d+)*$/.test(parts[i])) return parts[i];
+      }
+      return null;
+    })();
+
+    if (!fallbackVersion) {
+      throw new Error(`[Natives] No se encontró JSON ni fallback válido para versión: ${versionID}`);
+    }
+
+    const fallbackPath = path.join(root, 'versions', fallbackVersion, `${fallbackVersion}.json`);
+    try {
+      const fallbackContent = await fs.readFile(fallbackPath, 'utf-8');
+      json = JSON.parse(fallbackContent);
+      console.log(`[Natives] Usando JSON fallback para versión base ${fallbackVersion}`);
+    } catch {
+      throw new Error(`[Natives] No se encontró JSON fallback para la versión base ${fallbackVersion}`);
+    }
   }
 
-  const json = JSON.parse(await fs.readFile(versionJsonPath, 'utf-8'));
-
-  // Si inheritsFrom no es string válido, ignorar herencia
+  // Validar herencia solo si es string válido
   if (!json.inheritsFrom || typeof json.inheritsFrom !== 'string') {
     return json;
   }

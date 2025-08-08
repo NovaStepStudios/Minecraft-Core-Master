@@ -71,6 +71,23 @@ function ensureMinecraftFolders(gameRoot) {
   }
 }
 
+// Función para separar module-path y class-path cuando es NeoForge
+function splitModuleAndClassPath(classPath) {
+  const modulePath = [];
+  const classPathFiltered = [];
+
+  for (const jarPath of classPath) {
+    const lowerJar = jarPath.toLowerCase();
+    if (lowerJar.includes('securejarhandler') || lowerJar.includes('bootstraplauncher')) {
+      modulePath.push(jarPath);
+    } else {
+      classPathFiltered.push(jarPath);
+    }
+  }
+
+  return { modulePath, classPathFiltered };
+}
+
 module.exports = {
   build({ opts, version, auth, classPath }) {
     const args = [];
@@ -108,18 +125,33 @@ module.exports = {
       args.push('--enable-native-access=ALL-UNNAMED');
     }
 
-    if (Array.isArray(opts.jvmFlags)) {
-      const filteredJvmFlags = opts.jvmFlags.filter(f => typeof f === 'string' && f.trim());
-      args.push(...filteredJvmFlags);
+    // Si es NeoForge, añadir el fix de acceso reflección Java 17+ y separar module-path
+    const isNeoForge = version.id?.toLowerCase().includes('neoforge') || (version.type && version.type.toLowerCase() === 'neoforge');
+    if (isNeoForge) {
+      args.unshift('--add-opens', 'java.base/java.lang.invoke=ALL-UNNAMED');
+      console.log('[Minecraft-Core] Añadiendo --add-opens java.base/java.lang.invoke=ALL-UNNAMED (NeoForge detected)');
+
+      // Separamos modulePath y classPath
+      const { modulePath, classPathFiltered } = splitModuleAndClassPath(classPath);
+      if (modulePath.length === 0) {
+        throw new Error('[Minecraft-Core] No se encontró ningún jar para module-path requerido (ej: securejarhandler o bootstraplauncher)');
+      }
+      if (!classPathFiltered.length) {
+        throw new Error('[Minecraft-Core] classPath vacío tras separar module-path para NeoForge');
+      }
+
+      args.push('--module-path', modulePath.join(path.delimiter));
+      args.push('--add-modules', 'cpw.mods.bootstraplauncher');
+      args.push('--class-path', classPathFiltered.join(path.delimiter));
+    } else {
+      // No NeoForge, uso normal
+      if (!Array.isArray(classPath) || classPath.length === 0) {
+        throw new Error('[Minecraft-Core] classPath inválido o vacío');
+      }
+      args.push('-cp', classPath.join(path.delimiter));
     }
 
-    // ===== CLASSPATH =====
-    if (!Array.isArray(classPath) || classPath.length === 0) {
-      throw new Error('[Minecraft-Core] classPath inválido o vacío');
-    }
-    args.push('-cp', classPath.join(path.delimiter));
-
-    const mainClass = version.mainClass || 'net.minecraft.client.main.Main';
+    const mainClass = version.mainClass || (isNeoForge ? 'cpw.mods.bootstraplauncher.BootstrapLauncher' : 'net.minecraft.client.main.Main');
     if (typeof mainClass !== 'string' || mainClass.trim() === '') {
       throw new Error('[Minecraft-Core] mainClass inválido');
     }

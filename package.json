@@ -1,6 +1,6 @@
 {
   "name": "minecraft-core-master",
-  "version": "5.10.2",
+  "version": "6.10.2",
   "main": "main.js",
   "type": "commonjs",
   "files": [
@@ -45,6 +45,7 @@
     "url": "https://github.com/NovaStepStudios/Minecraft-Core-Master"
   },
   "dependencies": {
+    "cheerio": "^1.1.2",
     "dotenv": "^17.2.1",
     "p-limit": "^6.2.0",
     "tar": "^7.4.3",
