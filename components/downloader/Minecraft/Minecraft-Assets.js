@@ -14,7 +14,7 @@ class MinecraftAssetsDownloader extends EventEmitter {
     this.objectsDir = path.join(this.assetsDir, "objects");
     this.legacyVirtualDir = path.join(this.assetsDir, "legacy", "virtual");
     this.resourcesDir = path.join(root, "resources");
-    this.concurrency = 10;
+    this.concurrency = 15;
   }
 
   async start() {

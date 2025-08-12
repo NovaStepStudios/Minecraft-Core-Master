@@ -5,12 +5,16 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const VersionHandler = require('./handlers/Version');
-const Authenticator = require('./authenticator/index');
+// Ya no usarás este Authenticator, lo reemplazamos por minecraft-auth
+// const Authenticator = require('./authenticator/index');
 const NativesHandler = require('./handlers/Natives');
 const ClassPathHandler = require('./handlers/ClassPath');
 const ArgumentsHandler = require('./handlers/Arguments');
 const AssetsHandler = require('./handlers/Assets');
 const LibrariesHandler = require('./handlers/Libraries');
+
+// Importar minecraft-auth oficial
+const minecraftAuth = require('minecraft-auth');
 
 class MinecraftExecutor extends EventEmitter {
   constructor() {
@@ -30,21 +34,53 @@ class MinecraftExecutor extends EventEmitter {
     try {
       debug('Iniciando autenticación...');
 
-      const provider = opts.client.provider || (opts.client.password ? 'mojang' : 'legacy');
+      // Detectar proveedor (provider)
+      const provider = (opts.client.provider || (opts.client.password ? 'mojang' : 'cracked')).toLowerCase();
 
-      const auth = await Authenticator.login({
-        ...opts.client,
+      let account;
+
+      if (provider === 'microsoft') {
+        minecraftAuth.MicrosoftAuth.setup({
+          appID: opts.client.appID,
+          mode: opts.client.mode,
+          appSecret: opts.client.appSecret || undefined,
+        });
+
+        account = new minecraftAuth.MicrosoftAccount();
+
+        debug('Esperando código de autenticación Microsoft (OAuth)...');
+        const code = await minecraftAuth.MicrosoftAuth.listenForCode();
+
+        if (!code) throw new Error('No se obtuvo código de autenticación Microsoft');
+
+        await account.authFlow(code);
+      } else if (provider === 'mojang') {
+        account = new minecraftAuth.MojangAccount();
+
+        debug(`Autenticando con Mojang: ${opts.client.username}`);
+        await account.Login(opts.client.username, opts.client.password);
+
+      } else if (provider === 'cracked' || provider === 'legacy') {
+        account = new minecraftAuth.CrackedAccount(opts.client.username || 'Player');
+        debug(`Usando modo cracked con usuario ${account.username}`);
+
+      } else {
+        throw new Error(`Proveedor de autenticación desconocido: ${provider}`);
+      }
+
+      debug(`Autenticado como ${account.username}`);
+
+      await account.getProfile();
+
+      // Construir objeto auth compatible con tu launcher
+      const auth = {
+        name: account.username,
+        uuid: account.uuid,
+        access_token: account.accessToken,
+        profile: account.profile,
+        ownership: account.ownership,
         provider,
-      }, {
-        demo: opts.demo,
-        root: opts.root,
-        versionId: opts.version.versionID,
-        gameDir: opts.gameDir || opts.root,
-      });
-
-      debug(`Autenticado como ${auth.name}`);
-      if (opts.client.skinUrl) debug(`Skin URL personalizada: ${opts.client.skinUrl}`);
-      if (opts.client.capeUrl) debug(`Cape URL personalizada: ${opts.client.capeUrl}`);
+      };
 
       debug(`Cargando versión ${opts.version.versionID}...`);
       const versionData = await VersionHandler.load(opts.root, opts.version.versionID);
@@ -71,7 +107,6 @@ class MinecraftExecutor extends EventEmitter {
 
       debug('Construyendo classpath...');
       const { classPath, modulePath } = await ClassPathHandler.build(opts.root, versionData);
-
 
       debug('Preparando argumentos de ejecución...');
       const args = ArgumentsHandler.build({
@@ -137,7 +172,6 @@ class MinecraftExecutor extends EventEmitter {
         }
       });
 
-
       this.emit('started', { auth, opts, versionData });
 
     } catch (err) {
@@ -159,6 +193,7 @@ class MinecraftExecutor extends EventEmitter {
       this.emit('debug', 'Proceso Java detenido');
     }
   }
+
   _saveErrorLog(err, context = {}) {
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
@@ -188,12 +223,12 @@ class MinecraftExecutor extends EventEmitter {
     =======================================================
     `;
 
-      const logDir = path.resolve(context.root || './', 'logs');
-      if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+    const logDir = path.resolve(context.root || './', 'logs');
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 
-      const logPath = path.join(logDir, fileName);
-      fs.writeFileSync(logPath, logContent, 'utf-8');
-      console.error(`❌ [ERROR LOG] Guardado en: ${logPath}`);
+    const logPath = path.join(logDir, fileName);
+    fs.writeFileSync(logPath, logContent, 'utf-8');
+    console.error(`❌ [ERROR LOG] Guardado en: ${logPath}`);
   }
 
   _normalizeOptions(userOpts) {
@@ -217,10 +252,11 @@ class MinecraftExecutor extends EventEmitter {
       client: {
         username: userOpts.client?.username || 'Player',
         password: userOpts.client?.password || '',
-        skinUrl: userOpts.client?.skinUrl || '',
-        capeUrl: userOpts.client?.capeUrl || '',
         provider: userOpts.client?.provider || 'legacy',
         email: userOpts.client?.email || null,
+        mode: userOpts.client?.mode || 'native',
+        appID: userOpts.client?.appID || null,
+        appSecret: userOpts.client?.appSecret || null,
       },
       jvmFlags: Array.isArray(userOpts.jvmFlags) ? userOpts.jvmFlags : [],
       mcFlags: Array.isArray(userOpts.mcFlags) ? userOpts.mcFlags : [],

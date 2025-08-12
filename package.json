@@ -1,12 +1,14 @@
 {
   "name": "minecraft-core-master",
-  "version": "6.10.2",
+  "version": "6.10.4",
   "main": "main.js",
   "type": "commonjs",
+  "types": "main.d.ts",
   "files": [
     "components/**/*",
     "README.md",
-    "main.js"
+    "main.js",
+    "main.d.ts"
   ],
   "engines": {
     "node": ">=18"
@@ -30,23 +32,19 @@
   ],
   "author": "NovaStepStudios",
   "license": "MIT",
-  "description": "Minecraft-core-master is a powerful JavaScript library that allows you to easily download official Minecraft versions, including all necessary libraries, assets, and native files, directly from Mojang servers. Additionally, it supports launching Minecraft with customizable options",
+  "description": "minecraft-core-master is a complete Minecraft core written in JavaScript, capable of downloading and installing official and custom versions (Forge, NeoForge, Fabric, Quilt, LegacyFabric), including all required libraries, assets, and native files. It also supports fully customizable game launching with advanced configuration options.",
   "repository": {
-    "type": "github",
-    "url": "https://github.com/NovaStepStudios/Minecraft-Core-Master"
+    "type": "git",
+    "url": "https://github.com/NovaStepStudios/Minecraft-Core-Master.git"
   },
   "dependencies": {
     "cheerio": "^1.1.2",
-    "dotenv": "^17.2.1",
+    "node-fetch": "^3.3.2",
+    "open": "^10.2.0",
     "p-limit": "^6.2.0",
     "tar": "^7.4.3",
     "unzipper": "^0.12.3",
-    "uuid": "^11.1.0"
-  },
-  "devDependencies": {
-    "express": "^5.1.0",
-    "node-fetch": "^3.3.2",
-    "open": "^10.2.0"
+    "uuid": "^11.1.0",
+    "minecraft-auth": "^2.0.10"
   }
 }
-

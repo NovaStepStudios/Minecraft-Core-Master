@@ -13,7 +13,7 @@ class MinecraftLibrariesDownloader extends EventEmitter {
     this.libsDir = path.join(root, "libraries");
     this.extraLibsPath = extraLibsPath || path.join(__dirname, 'ExtraLibs.json');
     this.currentOS = this.#mapOS(os.platform());
-    this.maxRetries = 3; // reintentos al descargar
+    this.maxRetries = 5
   }
 
   async start() {
@@ -112,7 +112,7 @@ class MinecraftLibrariesDownloader extends EventEmitter {
         if (res.statusCode !== 200) {
           file.close();
           fs.unlink(dest, () => {});
-          return reject(new Error(`[Minecraft-Core-Master || Downloader > Error] HTTP ${res.statusCode} al descargar: ${url}`));
+          return reject(new Error(`Error HTTP ${res.statusCode} al descargar: ${url}`));
         }
         res.pipe(file);
         file.on("finish", () => file.close(resolve));

@@ -39,7 +39,7 @@ class MinecraftDownloader extends EventEmitter {
           const versionId = typeof version === 'string' ? version : version.id;
           const xmlPath = await downloadLoggingXml(versionId, root);
           this.#emitStepDone("Logging XML");
-          this.emit('info', `[Minecraft-Core-Master || Downloader] Logging XML descargado en: ${xmlPath}`);
+          this.emit('info', ` Logging XML descargado en: ${xmlPath}`);
         } catch (error) {
           this._saveErrorLog(error, {
             task: 'Logging XML',
@@ -48,7 +48,7 @@ class MinecraftDownloader extends EventEmitter {
             step: 'downloadLoggingXml',
             profile: 'UnknownUser'
           });
-          this.emit('error', new Error(`[Minecraft-Core-Master || Downloader > XML] Fallo descarga Logging XML: ${error.message}`));
+          this.emit('error', new Error(`Fallo descarga Logging XML: ${error.message}`));
         }
       });
 
@@ -138,22 +138,22 @@ class MinecraftDownloader extends EventEmitter {
     const fileName = `minecraft-core-master_step_download_${dateStr}_${timeStr}_${context.profile || 'UnknownUser'}.log`;
 
     const logContent = `
-    =========== MINECRAFT CORE MASTER ERROR LOG ===========
-    Date         : ${now.toISOString()}
-    Profile      : ${context.profile || 'UnknownUser'}
-    Version      : ${context.version || 'UnknownVersion'}
-    OS           : ${process.platform}
-    Component    : Downloader -> ${context.task || 'General'}
-    Step         : ${context.step || 'N/A'}
-    Progress     : ${context.progress || '0%'}
-    Root         : ${context.root || 'UnknownRoot'}
+      =========== MINECRAFT CORE MASTER ERROR LOG ===========
+      Date         : ${now.toISOString()}
+      Profile      : ${context.profile || 'UnknownUser'}
+      Version      : ${context.version || 'UnknownVersion'}
+      OS           : ${process.platform}
+      Component    : Downloader -> ${context.task || 'General'}
+      Step         : ${context.step || 'N/A'}
+      Progress     : ${context.progress || '0%'}
+      Root         : ${context.root || 'UnknownRoot'}
 
-    ERROR MESSAGE:
-    ${err.message}
+      ERROR MESSAGE:
+      ${err.message}
 
-    STACKTRACE:
-    ${err.stack}
-    =======================================================
+      STACKTRACE:
+      ${err.stack}
+      =======================================================
     `;
 
     const logDir = path.resolve(context.root || './', 'logs');

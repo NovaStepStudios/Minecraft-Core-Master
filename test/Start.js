@@ -10,7 +10,7 @@ const opts = {
       min: '1G',
   },
   version:{
-      versionID: '1.20.2',
+      versionID: '1.20',
       type: 'release',
   },
   // window:{
@@ -21,6 +21,7 @@ const opts = {
   client:{
     username: 'SantiagoStepnicka012',
     password: 'SantiagoStepnicka',
+    provider: 'microsoft',
   },
   // jvmFlags:{}
   // mcFlags:{}

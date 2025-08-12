@@ -23,8 +23,8 @@ Mercado Pago :
 
 Instalacion `npm i minecraft-core-master`
 
-Dependencias que utiliza : **node-fetch, p-limit, tar, unzipper, cheerio, uuid,express ( AuthMicrosfot ),dotenv ( IDAzure ), open**
-
+Dependencias que utiliza : **node-fetch, p-limit, tar, unzipper, cheerio, uuid, open, minecraft-auth**
+❤ Gracias a Minecraft-Auth para el login a microsoft, mojang, cracked, mas facilmente!
 
 ## 🚀 Componentes principales
 
@@ -84,52 +84,60 @@ Download.downloadAll("./.minecraft", "1.12.2", false, true);
 
 ---
 
-### 🛠️ `LoaderInstaller`
+### 🛠️ `MinecraftLoaders`
 
-Instala modloaders como **Forge**,**OptiFine**,**NeoForge**,**Quilt**,**Fabric**, sobre una instalación existente de Minecraft.
+Instala modloaders como **Forge**, **OptiFine**, **NeoForge**, **Quilt**, **Fabric**, sobre una instalación existente de Minecraft.
 
 #### 📦 Ejemplo de uso
 
 ```js
-const { MinecraftLoaders } = require('../../main.js');
+const {MinecraftLoaders} = require('minecraft-core-master');
 
-const installer = MinecraftLoaders.neoforge({
-    root: '.minecraft', // Ruta a la carpeta raíz
-    version: '21.4.0-beta' // Versión de NeoForge
+const installer = new MinecraftLoaders().neoforge({
+  root: '.minecraft',        // Ruta a la carpeta raíz
+  version: '21.4.0-beta'     // Versión de NeoForge
 });
 
 installer.on('data', (msg) => {
-    console.log(`[NeoForge] ${msg}`);
+  console.log(`[NeoForge] ${msg}`);
 });
 
 installer.on('done', () => {
-    console.log("✅ NeoForge instalado correctamente.");
+  console.log("✅ NeoForge instalado correctamente.");
 });
 
 installer.on('error', (err) => {
-    console.error("❌ Error durante la instalación:", err);
+  console.error("❌ Error durante la instalación:", err);
 });
 ```
+
 ```js
-const {MinecraftLoaders} = require('../../main.js');
-MinecraftLoaders.forge({
+const {MinecraftLoaders} = require('minecraft-core-master');
+
+new MinecraftLoaders().forge({
   root: './.minecraft',
   version: '1.16.5-36.2.20',
-}).on('data', (msg) => {
-  console.log(`[Forge] Progreso: ${msg.progress}/${msg.total}`);
-}).on('done', () => {
-  console.log('[Forge] Instalación completada');
-}).on('error', console.error);
+})
+  .on('data', (msg) => {
+    console.log(`[Forge] Progreso: ${msg.progress}/${msg.total}`);
+  })
+  .on('done', () => {
+    console.log('[Forge] Instalación completada');
+  })
+  .on('error', console.error);
 ```
-Otros mas! ( Fabric, Forge, Neoforge, LegacyFabric, Quilt ) [ View Github In Test Folder Please ]
 
+Otros modloaders: Fabric, LegacyFabric, Quilt, Neoforge.
+
+Puedes ver ejemplos en la carpeta de pruebas:
 [TestLoaders](https://github.com/NovaStepStudios/Minecraft-Core-Master/tree/main/test/Loaders)
 
 #### ℹ️ Notas
 
-* La carpeta `destDir` debe tener una instalación válida de Minecraft.
+* La carpeta `root` debe contener una instalación válida de Minecraft.
 * Requiere **Java en PATH** para instalar Forge.
 * No descarga Minecraft base, solo inyecta el modloader deseado.
+
 ---
 
 ### 🎮 `MinecraftExecutor`
@@ -163,8 +171,9 @@ Launcher.on('close', (code) => {
 });
 
 ```
+---
 
-#### 😎 Ejemplo práctico ( Avanzado )
+### 😎 Ejemplo práctico (Avanzado)
 
 ```js
 const { MinecraftExecutor } = require('minecraft-core-master');
@@ -186,20 +195,21 @@ const opts = {
   client: {
     username: 'SantiagoStepnicka012',
     password: 'xxx_Santiago_xxx', // Opcional
-    skinUrl: path.join(__dirname, 'skins', 'skin.png'),  // Personalización de Skin Local
-    capeUrl: path.join(__dirname, 'skins', 'cape.png'),  // Personalización de Capa Local
-    provider: 'microsoft', // 'microsoft' || 'mojang' || 'legacy'
-    email: 'example@gmail.com', // Solo si el provider es 'microsoft' ( AVISO NECESITAS SER MAYOR DE EDAD, PARA LOGUEARTE )
+    provider: 'microsoft', // 'microsoft' | 'mojang' | 'legacy'
+    email: 'example@gmail.com', // Opcional, para Microsoft
+    appID: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', // AZURE APP ID
+    appSecret: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', // AZURE APP SECRET
+    mode: 'native', // 'native' | 'web' (Minecraft-Auth)
   },
   demo: false,
   debug: true,
-  jvmFlags: ['-XX:+UseG1GC', '-Dfml.ignoreInvalidMinecraftCertificates=true'], // Opcional JVM
-  mcFlags: ['--forceUpgrade'], // Opcional Minecraft Args
+  jvmFlags: ['-XX:+UseG1GC', '-Dfml.ignoreInvalidMinecraftCertificates=true'],
+  mcFlags: ['--forceUpgrade'],
 };
 
 Launcher.start(opts);
 
-// Eventos Detallados
+// Eventos
 Launcher.on('debug', msg => console.log(`🟢 [DEBUG] ${msg}`));
 Launcher.on('error', err => console.error(`❌ [ERROR] ${err}`));
 Launcher.on('started', ({ auth, opts, versionData }) => {
@@ -210,22 +220,23 @@ Launcher.on('close', (code) => {
 });
 ```
 
+---
 
-#### ⚙️ Argumentos disponibles en `start(opts)`
+### ⚙️ Argumentos disponibles en `start(opts)`
 
-| Campo       | Tipo                                                                                                             | Descripción                                                                          | Ejemplo / Notas                                                                         |
-| ----------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `root`      | `string`                                                                                                         | Carpeta raíz donde se almacenarán los datos del juego.                               | `'./.minecraft'`                                                                        |
-| `javaPath`  | `string`                                                                                                         | Ruta al ejecutable de Java (`java` o `javaw.exe`).                                   | `'C:/Program Files/Java/jdk-17/bin/javaw.exe'` o simplemente `'java'`                   |
-| `memory`    | `{ min: string, max: string }`                                                                                   | Cantidad de RAM a usar.                                                              | `{ min: '1G', max: '4G' }`                                                              |
-| `window`    | `{ width: number, height: number, fullscreen: boolean }`                                                         | Configura el tamaño de ventana y modo pantalla completa.                             | `{ width: 1280, height: 720, fullscreen: false }`                                       |
-| `version`   | `{ versionID: string, type: string }`                                                                            | Versión de Minecraft a iniciar.                                                      | `{ versionID: '1.20.1', type: 'release' }`                                              |
-| `client`    | `{ username: string, password?: string, provider?: string, skinUrl?: string, capeUrl?: string, email?: string }` | Datos de la cuenta o perfil offline, personalización de skin/capa y método de login. | `username` es obligatorio. `provider` puede ser: `'microsoft'`, `'mojang'`, `'legacy'`. |
-| `jvmFlags`  | `string[]`                                                                                                       | Argumentos avanzados para la JVM (rendimiento, compatibilidad, debug).               | `['-XX:+UseG1GC', '-Dfml.ignoreInvalidMinecraftCertificates=true']`                     |
-| `mcFlags`   | `string[]`                                                                                                       | Argumentos adicionales para Minecraft (ej: `--forceUpgrade`, `--server`).            | `['--forceUpgrade']`                                                                    |
-| `overrides` | `{ assetsDir?: string, gameDir?: string, librariesDir?: string }`                                                | Sobrescribe rutas personalizadas para carpetas internas del juego.                   | `{ assetsDir: './custom-assets', gameDir: './profiles/Santi' }`                         |
-| `demo`      | `boolean`                                                                                                        | Activa el modo demo de Minecraft (sin cuenta oficial).                               | `true` o `false`                                                                        |
-| `debug`     | `boolean`                                                                                                        | Activa los logs detallados de cada paso durante la ejecución.                        | `true` o `false`                                                                        |
+| Campo       | Tipo                                                                                                                            | Descripción                                                               | Ejemplo / Notas                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `root`      | `string`                                                                                                                        | Carpeta raíz donde se almacenarán los datos del juego.                    | `'./.minecraft'`                                                                                         |
+| `javaPath`  | `string`                                                                                                                        | Ruta al ejecutable de Java (`java` o `javaw.exe`).                        | `'C:/Program Files/Java/jdk-17/bin/javaw.exe'` o `'java'`                                                |
+| `memory`    | `{ min: string, max: string }`                                                                                                  | Cantidad de RAM a usar.                                                   | `{ min: '1G', max: '4G' }`                                                                               |
+| `window`    | `{ width: number, height: number, fullscreen: boolean }`                                                                        | Configura tamaño de ventana y modo pantalla completa.                     | `{ width: 1280, height: 720, fullscreen: false }`                                                        |
+| `version`   | `{ versionID: string, type: string }`                                                                                           | Versión de Minecraft a iniciar.                                           | `{ versionID: '1.20.1', type: 'release' }`                                                               |
+| `client`    | `{ username: string, password?: string, provider?: string, email?: string, appID?: string, appSecret?: string, mode?: string }` | Datos de la cuenta o perfil offline y método de login.                    | `provider` puede ser `'microsoft'`, `'mojang'`, `'legacy'`. `mode` para Microsoft: `'native'` o `'web'`. |
+| `jvmFlags`  | `string[]`                                                                                                                      | Argumentos avanzados para la JVM (rendimiento, compatibilidad, debug).    | `['-XX:+UseG1GC', '-Dfml.ignoreInvalidMinecraftCertificates=true']`                                      |
+| `mcFlags`   | `string[]`                                                                                                                      | Argumentos adicionales para Minecraft (ej: `--forceUpgrade`, `--server`). | `['--forceUpgrade']`                                                                                     |
+| `overrides` | `{ assetsDir?: string, gameDir?: string, librariesDir?: string }`                                                               | Sobrescribe rutas personalizadas para carpetas internas del juego.        | `{ assetsDir: './custom-assets', gameDir: './profiles/Santi' }`                                          |
+| `demo`      | `boolean`                                                                                                                       | Activa el modo demo de Minecraft.                                         | `true` o `false`                                                                                         |
+| `debug`     | `boolean`                                                                                                                       | Activa los logs detallados de cada paso.                                  | `true` o `false`                                                                                         |
 
 ---
 
@@ -279,4 +290,3 @@ Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo exten
 ¿Querés dar el siguiente paso y crear tu propio launcher personalizado? ¿Necesitás ayuda con ejemplos avanzados, integración en React/Electron o incluso un sistema de mods? Solo decime y te armo lo que necesites.
 
 ---
-

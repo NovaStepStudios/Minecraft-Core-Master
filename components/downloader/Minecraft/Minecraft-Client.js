@@ -18,7 +18,7 @@ class MinecraftClientDownloader extends EventEmitter {
 
       const manifest = await this.#fetchJSON("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json");
       const versionMeta = manifest.versions.find(v => v.id === this.version);
-      if (!versionMeta) throw new Error(`[Minecraft-Core-Master || Downloader > Version] Versión ${this.version} no encontrada.`);
+      if (!versionMeta) throw new Error(`Version] Versión ${this.version} no encontrada.`);
 
       const versionJSON = await this.#fetchJSON(versionMeta.url);
 
@@ -27,7 +27,7 @@ class MinecraftClientDownloader extends EventEmitter {
       this.#emitProgress(1, 3); // 33%
 
       const clientURL = versionJSON.downloads?.client?.url;
-      if (!clientURL) throw new Error(`[Minecraft-Core-Master || Downloader > Not Found Client] No se encontró el cliente para ${this.version}`);
+      if (!clientURL) throw new Error(`[ Not Found Client] No se encontró el cliente para ${this.version}`);
 
       const clientJarPath = path.join(this.versionsDir, `${this.version}.jar`);
       if (!fs.existsSync(clientJarPath)) {
@@ -54,7 +54,7 @@ class MinecraftClientDownloader extends EventEmitter {
   async #fetchJSON(url) {
     return new Promise((resolve, reject) => {
       https.get(url, res => {
-        if (res.statusCode !== 200) return reject(new Error(`[Minecraft-Core-Master || Downloader > HTTP Request] HTTP ${res.statusCode} - ${url}`));
+        if (res.statusCode !== 200) return reject(new Error(`[ HTTP Request ] HTTP ${res.statusCode} - ${url}`));
         let data = "";
         res.on("data", chunk => data += chunk);
         res.on("end", () => {
@@ -71,7 +71,7 @@ class MinecraftClientDownloader extends EventEmitter {
   async #downloadFile(url, dest, onProgress) {
     return new Promise((resolve, reject) => {
       https.get(url, res => {
-        if (res.statusCode !== 200) return reject(new Error(`[Minecraft-Core-Master || Downloader > HTTP] Error HTTP: ${res.statusCode}`));
+        if (res.statusCode !== 200) return reject(new Error(`[ HTTP ] Error HTTP: ${res.statusCode}`));
 
         const totalSize = parseInt(res.headers["content-length"], 10);
         let downloaded = 0;
