@@ -7,3 +7,5 @@ MinecraftLoaders.fabric({
 }).on('done', () => {
   console.log('[Fabric] Instalado correctamente');
 });
+// Link https://meta.fabricmc.net/
+// Link que se utiliza : https://meta.fabricmc.net/v2/versions/loader

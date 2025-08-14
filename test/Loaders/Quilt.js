@@ -5,3 +5,4 @@ MinecraftLoaders.quilt({
 }).on('data', (msg) => {
   console.log(`[Quilt] Descargando: ${msg.progress}/${msg.total}`);
 });
+// Link https://meta.quiltmc.org/v3/versions/game

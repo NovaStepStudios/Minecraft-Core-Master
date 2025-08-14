@@ -16,3 +16,5 @@ installer.on('done', () => {
 installer.on('error', (err) => {
     console.error("❌ Error durante la instalación:", err);
 });
+
+// Link https://maven.neoforged.net/releases/net/neoforged/neoforge/

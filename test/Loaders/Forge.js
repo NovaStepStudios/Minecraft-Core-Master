@@ -7,3 +7,5 @@ MinecraftLoaders.forge({
 }).on('done', () => {
   console.log('[Forge] Instalación completada');
 }).on('error', console.error);
+
+// Link https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json
