@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "target": "ES2022",
+    "module": "CommonJS",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "sourceMap": false,                 // Mapas de depuración
+    "declaration": true,               // Generar .d.ts (tipos)
+    "declarationMap": false,            // Mapas para los .d.ts
+    "strict": true,                    // Activa todas las comprobaciones estrictas
+    "noUncheckedIndexedAccess": true,  // Mejora seguridad en arrays/objetos
+    "exactOptionalPropertyTypes": true,// Mejor control en propiedades opcionales
+    /* Limpieza y buenas prácticas */
+    "noImplicitReturns": true,         // Obliga a retornar siempre en funciones
+    "noUnusedLocals": true,            // Marca variables locales no usadas
+    "noUnusedParameters": true,        // Marca parámetros no usados
+    "noFallthroughCasesInSwitch": true, // Evita errores en switch-case
+    /* Módulos y compatibilidad */
+    "esModuleInterop": true,                  // Permite importar módulos CommonJS como ES
+    "forceConsistentCasingInFileNames": true, // Consistencia en mayúsculas/minúsculas
+    "skipLibCheck": true,                     // Evita chequeos innecesarios en libs externas
+    /* Optimización */
+    "isolatedModules": true,           // Requerido si luego usas herramientas como Babel
+    "verbatimModuleSyntax": false,     // Normaliza imports/exports
+    "resolveJsonModule": true          // Permite importar JSON directamente
+  },
+  "include": ["src"],                   // Archivos a compilar
+  "exclude": ["node_modules","test","resources","dist"]  // Carpetas ignoradas
+}
