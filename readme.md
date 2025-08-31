@@ -1,5 +1,6 @@
-![npm](./docs/icon.png)
-
+<p align="center">
+  <img align="center" width="400px" src="./docs/icon.png">
+</p>
 
 ![Stable Version](https://img.shields.io/npm/v/minecraft-core-master?logo=nodedotjs&label=stable%20version)
 [![npm downloads](https://img.shields.io/npm/dt/minecraft-core-master.svg)](https://www.npmjs.com/package/minecraft-core-master)
@@ -17,9 +18,12 @@ Desarrollado por **NovaStep Studios** con un enfoque en rendimiento, control tot
 Únete a nuestro [Discord Oficial](https://discord.gg/YAqpTWQByM) y recibe ayuda rápida, noticias y tips directamente de otros usuarios o de **``Stepnicka!``**.  
 
 <p align="center">
-  <a href="https://discord.com/invite/BpqC88ZN">
-    <img src="https://invidget.switchblade.xyz/BpqC88ZN" alt="Invitación a Discord">
-  </a>
+  <img align="center" width="200px" src="./docs/Discord.gif">
+  <p align="center">
+    <a href="https://discord.gg/YAqpTWQByM" target="_blank">
+      <img src="https://img.shields.io/badge/Únete%20al%20Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white" alt="Únete a Discord">
+    </a>
+  </p>
 </p>
 
 ---
@@ -39,13 +43,14 @@ Mercado Pago :
 
 **``pnpm add minecraft-core-master``**
 
-Dependencias que utiliza : **p-limit, prompt, semver**
+Dependencias que utiliza : **p-limit, prompt, uuid**
 ## **Componentes principales**
 
 
-### **`MinecraftDownloader`**
-
-![npm](./docs/multi-version.webp)
+<p align="center">
+  <img align="center" width="auto" src="./docs/multi-version.webp">
+  <h1 align="center">MinecraftDownloader</h1>
+</p>
 
 Clase que descarga todos los recursos necesarios para ejecutar Minecraft:
 
@@ -105,9 +110,108 @@ async function main() {
 }
 
 main().catch(console.error);
-### ⚙️ Parámetros de `MinecraftDownloader.start(opts)`
 ```
 
+<p align="center">
+  <img align="center" width="300px" src="./docs/Instancies.png">
+  <h1 align="center">createInstancie</h1>
+</p>
+
+### ¿Como crear una instancia?
+
+```js
+const { MinecraftDownloader, Mojang } = require('minecraft-core-master');
+
+(async () => {
+  const CreateInstancie = new MinecraftDownloader();
+
+  // Escuchar eventos
+  CreateInstancie.on("progress", ({ current, stepPercent, totalPercent }) => {
+    console.log(`[PROGRESS] ${current} - Paso: ${stepPercent}% - Total: ${totalPercent}%`);
+  });
+
+  CreateInstancie.on("info", (...args) => console.log("ℹ️ [INFO]", ...args));
+  CreateInstancie.on("warn", (...args) => console.warn("⚠️ [WARN]", ...args));
+  CreateInstancie.on("error", (...args) => console.error("❌ [ERROR]", ...args));
+  CreateInstancie.on("step-done", (step) => console.log(`✅ Paso completado: ${step}`));
+  CreateInstancie.on("done", () => console.log("🎉 Descarga completada!"));
+
+  const user = await Mojang.login("Stepnicka012");
+
+  const Opts = {
+    root: "./.minecraft",
+    version: "1.12.2",
+    installJava: false,
+    variantJava: "release",
+    concurrency: false,
+
+    manifest: {
+      name: "Mi Instancia", // Nombre de la instancia [ Obligatorio ]
+      description: ["", ""], // Descripcion de la instancia [ Opcional ]
+      icon: "" // Icono de la instancia [ Opcional ]
+    },
+
+    userConfig: {
+      authenticator: user // Datos del Usuario [ Opcional ]
+    },
+
+    gameConfig: {
+      resolution: { width: "1280", height: "720", fullscreen: false },
+      memory: { min: "512M", max: "4G" },
+      javaArgs: [],
+      gameArgs: []
+    } // Configuracion de la instancia para iniciar [ Obligatorio ]
+  };
+
+  await CreateInstancie.createInstancie(Opts);
+
+  console.log("🎉 Instancia lista para usar!");
+})();
+```
+### Archivo Manifest.json [ Instancia ] ( Instancie Config Manifest )
+```json
+{
+  "id": "mi-instancia",
+  "manifest": {
+    "name": "Mi Instancia",
+    "description": [
+      "",
+      ""
+    ],
+    "icon": "",
+    "created": "2025-08-31T01:54:28.564Z"
+  },
+  "userConfig": {
+    "authenticator": {
+      "access_token": "1d089d62dc16cc10a60040443443db4a",
+      "client_token": "1d089d62dc16cc10a60040443443db4a",
+      "uuid": "1d089d62dc16cc10a60040443443db4a",
+      "name": "Stepnicka012",
+      "user_properties": "{}",
+      "meta": {
+        "online": false,
+        "type": "Mojang"
+      }
+    }
+  },
+  "gameConfig": {
+    "resolution": {
+      "width": "1280",
+      "height": "720",
+      "fullscreen": false
+    },
+    "memory": {
+      "min": "512M",
+      "max": "4G"
+    },
+    "javaArgs": [],
+    "gameArgs": []
+  }
+}
+```
+
+---
+### Parametros
 | Parámetro     | Tipo                | Descripción                                                                                           | Ejemplo                                |
 |---------------|---------------------|-------------------------------------------------------------------------------------------------------|----------------------------------------|
 | `root`        | `string`            | Carpeta raíz donde se almacenarán todos los datos de Minecraft.                                       | `"./.minecraft"`                        |
@@ -196,10 +300,10 @@ Puedes ver ejemplos en la carpeta de pruebas:
 * No descarga Minecraft base, solo inyecta el modloader deseado. -->
 
 ---
-
-### **`MinecraftLauncher`**
-
-![npm](./docs/players.png)
+<p align="center">
+  <img align="center" width="auto" src="./docs/players.png">
+  <h1 align="center">MinecraftLauncher</h1>
+</p>
 
 Clase que permite **lanzar Minecraft** con control total: configuración de memoria, ruta Java, ventana, argumentos, y sistema de logs y errores con persistencia.
 
@@ -218,7 +322,6 @@ const { MinecraftLauncher, Mojang } = require('minecraft-core-master');
     
     jvmArgs: [],   // Argumentos JVM opcionales
     mcArgs: [],    // Argumentos del cliente opcionales
-    demo: false,   // Activar modo demo
     debug: false,  // Activar logs de depuración
 
     memory: {      // Configuración de RAM
@@ -251,6 +354,62 @@ const { MinecraftLauncher, Mojang } = require('minecraft-core-master');
   }
 })();
 ```
+---
+
+### **`launchInstancie`**
+
+<p align="center">
+  <img align="center" width="300px" src="./docs/ExecuteInstancie.png">
+  <h1 align="center">launchInstancie</h1>
+</p>
+
+Permite **lanzar instancias preconfiguradas**, donde cada carpeta de instancia contiene su propio `Manifest-Instancie.json` junto con los archivos de Minecraft.
+Esto hace que el launcher pueda leer automáticamente la configuración sin necesidad de pasar todos los parámetros manualmente.
+
+📂 **Estructura esperada:**
+
+```
+rootBase/
+ └── instancies/
+     └── mi-instancia/
+         ├── Manifest-Instancie.json
+         ├── versions/
+         ├── libraries/
+         └── assets/
+         └── ...
+```
+
+📜 **Ejemplo de uso:**
+
+```js
+const { MinecraftLauncher } = require('minecraft-core-master');
+const path = require('path');
+
+(async () => {
+  // Inicializar el launcher (mínimo requiere Java)
+  const launcher = new MinecraftLauncher({
+    javaPath: 'C:/Program Files/Java/jre1.8.0_461/bin/javaw.exe'
+  });
+
+  // Eventos
+  launcher.on('debug', (msg) => console.log('[DEBUG]', msg));
+  launcher.on('warn', (msg) => console.warn('[WARN]', msg));
+  launcher.on('error', (err) => console.error('[ERROR]', err));
+  launcher.on('data', (msg) => console.log('[DATA]', msg));
+
+  try {
+    await launcher.launchInstancie(
+      path.resolve("./.minecraft"), // Ruta base
+      "mi-instancia"                // Nombre de la instancia
+    );
+    console.log("✅ Minecraft lanzado correctamente desde la instancia!");
+  } catch (err) {
+    console.error("❌ Falló el lanzamiento:", err);
+  }
+})();
+```
+
+---
 
 | Parámetro           | Tipo              | Descripción                                                                                | Ejemplo                                        |
 | ------------------- | ----------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------- |
@@ -260,7 +419,6 @@ const { MinecraftLauncher, Mojang } = require('minecraft-core-master');
 | `javaPath`          | `string`          | Ruta al ejecutable de Java (`javaw.exe` o `java`).                                         | `"C:/Program Files/Java/jdk-21/bin/javaw.exe"` |
 | `jvmArgs`           | `string[]`        | Argumentos adicionales para la JVM (rendimiento, debug, compatibilidad).                   | `["-XX:+UseG1GC"]`                             |
 | `mcArgs`            | `string[]`        | Argumentos adicionales para Minecraft.                                                     | `["--fullscreen"]`                             |
-| `demo`              | `boolean`         | Activa el modo demo de Minecraft.                                                          | `false`                                        |
 | `debug`             | `boolean`         | Activa logs de depuración detallados.                                                      | `true`                                         |
 | `memory.min`        | `string`          | Memoria mínima asignada a la JVM.                                                          | `"512M"`, `"1G"`                               |
 | `memory.max`        | `string`          | Memoria máxima asignada a la JVM.                                                          | `"2G"`, `"8G"`                                 |
@@ -417,7 +575,9 @@ async function main() {
 
 main().catch(err => console.error("💥 Error fatal:", err));
 ```
-![npm](./docs/MicrosoftLogin.png)
+<p align="center">
+  <img align="center" width="auto" src="./docs/MicrosoftLogin.png">
+</p>
 | Campo             | Tipo   | Descripción                            |
 | ----------------- | ------ | -------------------------------------- |
 | `access_token`    | string | Token de sesión devuelto por Microsoft |
@@ -547,16 +707,12 @@ Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo exten
 
 ---
 
-## 🏢 Acerca de NovaStep Studios
+## 🏢 Sobre NovaStep Studios
 
-**Minecraft-Core-Master** nace de la pasión y dedicación de **Santiago Stepnicka (Stepnicka)**, un desarrollador fullstack enfocado en **software libre, modularidad y excelencia técnica**. Cada línea de código está pensada para ofrecer **rendimiento, estabilidad y control total** sobre Minecraft.
+Minecraft-Core-Master nació porque me encanta Minecraft y la programación. Soy **Santiago Stepnicka (Stepnicka)**, desarrollador fullstack, y mi objetivo con este proyecto es que tengas **control total, estabilidad y buen rendimiento** en el juego, sin complicarte la vida.
 
-🎯 **Nuestra misión:** Empoderar a desarrolladores y comunidades con herramientas **profesionales, robustas y abiertas**, transformando la forma en que se juega y se lanza Minecraft. Creemos que **Minecraft debe ser una experiencia fluida, personalizable y sin complicaciones**, desde la instalación hasta el modding avanzado.
-
-🚀 **¿Querés llevar tu launcher al siguiente nivel?**
-Si buscás crear un **launcher personalizado**, integrar sistemas complejos en **React/Electron**, añadir soporte avanzado de **modloaders** o desarrollar herramientas únicas, en **NovaStep Studios** te damos todo el soporte y ejemplos que necesitás para lograrlo.
-
-✨ **Con Minecraft-Core-Master, las posibilidades son infinitas. Tu creatividad es el límite.**
+🚀 **Si querés llevar tu launcher al próximo nivel:**
+Ya sea que quieras crear tu propio launcher, integrar cosas con **React/Electron**, agregar soporte para mods avanzados, o hacer cualquier herramienta loca, en **NovaStep Studios** te doy la base y ejemplos para que lo logres sin dramas.
 
 <p align="center">
   <img align="center" width="150px" src="./docs/creator.png">
