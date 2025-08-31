@@ -459,6 +459,7 @@ async function MojangLogin() {
 
 MojangLogin();
 ```
+
 | Campo             | Tipo     | Descripción                                                  |
 | ----------------- | -------- | ------------------------------------------------------------ |
 | `access_token`    | `string` | Token de acceso para iniciar sesión y ejecutar Minecraft.    |
@@ -578,6 +579,7 @@ main().catch(err => console.error("💥 Error fatal:", err));
 <p align="center">
   <img align="center" width="auto" src="./docs/MicrosoftLogin.png">
 </p>
+
 | Campo             | Tipo   | Descripción                            |
 | ----------------- | ------ | -------------------------------------- |
 | `access_token`    | string | Token de sesión devuelto por Microsoft |
@@ -717,3 +719,4 @@ Ya sea que quieras crear tu propio launcher, integrar cosas con **React/Electron
 <p align="center">
   <img align="center" width="150px" src="./docs/creator.png">
 </p>
+
