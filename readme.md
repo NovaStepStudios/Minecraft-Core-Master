@@ -590,67 +590,119 @@ main().catch(err => console.error("💥 Error fatal:", err));
 
 ---
 
-### Login con autenticador personalizado (NovaAZauth / servidor propio)
+### NovaAZauth
+
+**NovaAZauth** es un **autenticador personalizado de Minecraft** que permite iniciar sesión contra un **servidor propio** (en este caso `https://nincraft.fr`) en lugar de los servidores oficiales de Mojang o Microsoft. Está diseñado para integrarse de forma directa con **MinecraftLauncher** de tu proyecto, generando un objeto `authenticator` completamente compatible para ejecutar Minecraft con credenciales gestionadas por tu propio backend.
+
+#### Características principales:
+
+* Soporta **login estándar** con email/usuario y contraseña.
+* Gestiona **2FA (doble factor de autenticación)** de manera interactiva si está habilitado.
+* Genera un objeto `authenticator` con todos los datos necesarios (`access_token`, `client_token`, `uuid`, `name`, `user_properties`, etc.).
+* Permite **verificar y refrescar sesiones** sin necesidad de reingresar credenciales.
+* Compatible con cualquier versión de Minecraft y launchers basados en tu `MinecraftLauncher`.
 
 ```js
-const { MinecraftLauncher } = require('minecraft-core-master');
-const AZauth = require('minecraft-core-master').AZauth.default;
-const path = require('path');
+const prompt = require('prompt')
+const { NovaAZauth, MinecraftLauncher } = require('../../dist/index');
+const auth = new NovaAZauth('https://nincraft.fr');
+const fs = require('fs');
 
-// ---------------- CONFIG ----------------
-const GAME_DIR = path.resolve('./.minecraft');
-const VERSION = '1.12.2';
-const JAVA_PATH = 'java'; // O ruta completa a tu JDK/JRE
-// ---------------------------------------
+let mc
+async function login() {
+    console.log('Inserte tu Email');
+    prompt.start();
+    let { email } = await prompt.get(['email']);
+    console.log('Inserta tu Contrseña');
+    let { password } = await prompt.get(['password']);
+    let azauth = await auth.login(email, password);
 
-(async () => {
-  try {
-    console.log('Iniciando launcher...');
-
-    // 1️⃣ Login con AZauth (es una clase)
-    const azAuthInstance = new AZauth('https://tuservidor');
-    const azUser = await azAuthInstance.login('username', 'password');
-    
-    if (azUser.error) {
-      console.error('Error AZauth:', azUser.reason, azUser.message);
-      return;
+    if (azauth.A2F) {
+        console.log('Esperando codigo...');
+        let { code } = await prompt.get(['code']);
+        azauth = await auth.login(email, password, code);
     }
-    console.log('✅ Login AZauth exitoso:', azUser.name);
-    console.log(azUser);
 
-    // 2️⃣ Configuración del launcher
-    const launcher = new MinecraftLauncher({
-      version: VERSION,
-      gameDir: GAME_DIR,
-      javaPath: JAVA_PATH,
-      authenticator: azUser,
-      memory: { min: '1G', max: '4G' },
-      screen: { width: 1280, height: 720 },
-    });
+    if (azauth.error) {
+        console.log(azauth);
+        process.exit(1);
+    }
+    return azauth;
+}
 
-    // 3️⃣ Eventos
-    launcher.on('info', (msg) => console.log('[INFO]', msg));
-    launcher.on('progress', (msg) => console.log('[PROGRESS]', msg));
+async function main() {
+    if (!fs.existsSync('./NovaAZauth.json')) {
+        mc = await login();
+        fs.writeFileSync('./NovaAZauth.json', JSON.stringify(mc, null, 4));
+    } else {
+        mc = JSON.parse(fs.readFileSync('./NovaAZauth.json'));
+
+        if (!mc.access_token) {
+            mc = await login();
+            fs.writeFileSync('./NovaAZauth.json', JSON.stringify(mc, null, 4));
+        } else {
+            mc = await auth.verify(mc);
+            if (mc.error) mc = await login();
+            fs.writeFileSync('./NovaAZauth.json', JSON.stringify(mc, null, 4));
+        }
+    }
+
+    let opt = {
+        version: '1.21.8-OptiFine_HD_U_J6_pre16',
+        root: './.minecraft',
+        javaPath: "C:/Program Files/Java/jdk-24/bin/javaw.exe",
+        jvmArgs: [], // Argumentos de JVM *Java* [ Opcional ]
+        mcArgs:[], // Argumentos de Minecraft [ Opcional ]
+        debug: true, // Modo Deubg [ Opcional ]
+        memory:{
+            min: "512M",
+            max: "4G"
+        },
+        authenticator: {
+            ...mc,
+            name: mc.name.slice(0,16) // Limitar Nombre a 16 Caracteres
+        },
+        window: {
+            width: null,
+            height: null,
+            fullscreen: false
+        }
+    }
+
+    const launcher = new MinecraftLauncher(opt);
+    try{
+        await launcher.launch();
+    } catch (err){
+        console.log("Fallo el lanzamiento de Minecraft :",err)
+    }
+
+    launcher.on('debug', (msg) => console.log('[DEBUG]', msg));
     launcher.on('warn', (msg) => console.warn('[WARN]', msg));
     launcher.on('error', (err) => console.error('[ERROR]', err));
-    launcher.on('data', (child) => {
-      console.log('[DATA] Minecraft listo para ejecutar');
-      child.on('close', (code) => console.log('Minecraft cerrado con código:', code));
-    });
-
-    // 4️⃣ Lanzar Minecraft
-    await launcher.launch();
-
-  } catch (err) {
-    console.error('❌ Falló el lanzamiento:', err);
-  }
-})();
+    launcher.on('data', (msg) => console.log(msg));
+}
+main()
 ```
 
 | Campo / Objeto                  | Tipo              | Descripción                                                                                    |
 | ------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------- |
 | `NovaAZauth.login(username, password)` | `Promise<object>` | Autenticación contra tu servidor NovaAZauth. Devuelve un objeto compatible con `authenticator`.    |
 | `authenticator`                 | object            | Objeto devuelto por NovaAZauth que se pasa directamente a `MinecraftLauncher` para iniciar sesión. |
+
+
+#### Objeto devuelto (`authenticator`):
+
+| Campo             | Tipo   | Descripción                                                                                                                                                          |
+| ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access_token`    | string | Token de acceso válido para iniciar sesión.                                                                                                                          |
+| `client_token`    | string | Token único del cliente.                                                                                                                                             |
+| `uuid`            | string | Identificador único del usuario.                                                                                                                                     |
+| `name`            | string | Nombre del jugador. **Debe tener un máximo de 16 caracteres**, ya que Minecraft no permite enviar nombres más largos al servidor y causará un error de codificación. |
+| `user_properties` | string | JSON con propiedades del usuario.                                                                                                                                    |
+| `meta`            | object | Información extra, como tipo de autenticador y si está online.                                                                                                       |
+| `profile.skins`   | array  | Lista de skins asociadas al usuario (URL/base64).                                                                                                                    |
+
+
 
 ---
 
