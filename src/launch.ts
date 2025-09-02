@@ -143,4 +143,42 @@ export class MinecraftLauncher extends EventEmitter {
       throw err;
     }
   }
+  async launchInstancie(rootBase: string, instancieName: string): Promise<void> {
+    try {
+      const instancePath = path.join(rootBase, "instancies", instancieName);
+      const manifestPath = path.join(instancePath, "Manifest-Instancie.json");
+
+      if (!fs.existsSync(manifestPath)) {
+        throw new Error(`No existe Manifest-Instancie.json en la instancia: ${instancePath}`);
+      }
+
+      const instance = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+
+      this.options = {
+        version: instance.version || "",
+        root: instancePath,
+        javaPath: instance.gameConfig?.javaPath || this.options.javaPath,
+        jvmArgs: instance.gameConfig?.javaArgs || [],
+        mcArgs: instance.gameConfig?.gameArgs || [],
+        debug: this.options.debug ?? false,
+        memory: instance.gameConfig?.memory || { min: "512M", max: "2G" },
+        authenticator: instance.userConfig?.authenticator,
+        window: {
+          width: instance.gameConfig?.resolution?.width
+            ? Number(instance.gameConfig.resolution.width)
+            : 854,
+          height: instance.gameConfig?.resolution?.height
+            ? Number(instance.gameConfig.resolution.height)
+            : 480,
+          fullscreen: instance.gameConfig?.resolution?.fullscreen || false,
+        },
+      };
+
+      await this.launch();
+    } catch (err) {
+      this.emit("error", err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  }
+
 }

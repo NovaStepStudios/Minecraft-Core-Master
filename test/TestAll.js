@@ -5,7 +5,7 @@ const { Mojang } = require("../dist/index");
 const { spawn } = require("child_process");
 const ROOT = ".minecraft";
 const VERSION_ID = "1.16.5";
-const JAVA_PATH = "C:/Program Files/Java/jdk-17/bin/javaw.exe";
+const JAVA_PATH = "C:/Program Files/Java/jdk-19/bin/javaw.exe";
 
 (async () => {
   try {

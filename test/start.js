@@ -16,15 +16,15 @@ const { MinecraftLauncher, Mojang } = require('../dist/index');
 
   // Configuración del launcher
   const launcherOptions = {
-    version: '1.16.5',                // Cambia por la versión que tengas
+    version: '1.21.8-OptiFine_HD_U_J6_pre16',                // Cambia por la versión que tengas
     root: './.minecraft',            // Carpeta donde está tu .minecraft
-    javaPath: 'C:/Program Files/Java/jre1.8.0_461/bin/javaw.exe',
+    javaPath: "C:/Program Files/Java/jdk-24/bin/javaw.exe"||'C:/Program Files/Java/jre1.8.0_461/bin/javaw.exe',
     jvmArgs: [], // Argumentos de JVM *Java* [ Opcional ]
     mcArgs:[], // Argumentos de Minecraft [ Opcional ]
     debug: true, // Modo Deubg [ Opcional ]
     memory:{
       min: "512M",
-      max: "2G"
+      max: "4G"
     },
     authenticator: user,
     window: {

@@ -66,6 +66,7 @@ export interface Version {
   minecraftArguments?: string;
   arguments?: {
     game?: (string | { rules?: Rule[]; value: string | string[] })[];
+    jvm?: string[];
   };
   inheritsFrom?: string;
 }
@@ -172,6 +173,7 @@ function filterLwjglDuplicates(paths: string[]): string[] {
     return !!(lib && ver && latest[lib] === ver);
   });
 }
+
 export const ArgumentBuilder = {
   build({
     opts,
@@ -224,8 +226,7 @@ export const ArgumentBuilder = {
     else if (Array.isArray(classPath)) classPathArray = classPath;
 
     // Classpath
-    const isNeoForge =
-      version.id?.toLowerCase().includes("neoforge") || version.type?.toLowerCase() === "neoforge";
+    const isNeoForge = version.id?.toLowerCase().includes("neoforge") || version.type?.toLowerCase() === "neoforge";
 
     if (isNeoForge) {
       args.unshift("--add-opens", "java.base/java.lang.invoke=ALL-UNNAMED");
@@ -234,14 +235,13 @@ export const ArgumentBuilder = {
       const cleanedClassPath = classPathFiltered.filter((p) => !moduleSet.has(path.resolve(p)));
       if (!modulePath.length) throw new Error("[Minecraft-Core] Falta jar para module-path (NeoForge)");
       if (!cleanedClassPath.length) throw new Error("[Minecraft-Core] classPath vacío tras separar module-path (NeoForge)");
-      if (debug) console.log("[Minecraft-Core][debug] module-path:", modulePath.length, "class-path:", cleanedClassPath.length);
+      if (debug) console.log("[Minecraft-Core] module-path:", modulePath.length, "class-path:", cleanedClassPath.length);
       args.push("--module-path", modulePath.join(path.delimiter));
-      args.push("--add-modules", "cpw.mods.bootstraplauncher");
       args.push("--class-path", cleanedClassPath.join(path.delimiter));
     } else {
       const filteredClassPath = filterLwjglDuplicates(uniquePaths(classPathArray));
       if (!filteredClassPath.length) throw new Error("[Minecraft-Core] classPath vacío o inválido");
-      if (debug) console.log("[Minecraft-Core][debug] classpath count:", filteredClassPath.length);
+      if (debug) console.log("[Minecraft-Core] classpath count:", filteredClassPath.length);
       args.push("-cp", filteredClassPath.join(path.delimiter));
     }
 
@@ -266,11 +266,35 @@ export const ArgumentBuilder = {
       user_properties: auth.userProperties?.value || "{}",
       resolution_width: opts.window?.width || 854,
       resolution_height: opts.window?.height || 480,
-      fullscreen: opts.window?.fullscreen ? "false" : undefined,
+      fullscreen: opts.window?.fullscreen ?? false,
       clientid: auth.clientId || "unknown",
       offline: auth.offline ?? false,
       demo: false,
     };
+    if (opts.debug) console.log("[Minecraft-Core] Vars preparadas para ejecución:");
+    if (opts.debug) console.table(vars);
+    if (opts.debug) console.log("[Minecraft-Core] Ajustando flags según loader/version...");
+    opts.mcFlags = opts.mcFlags || [];
+    
+    if (version.id.toLowerCase().includes("fabric") && !opts.mcFlags.includes("--fabric")) {
+      opts.mcFlags.push("--fabric");
+    }
+
+    if (version.id.toLowerCase().includes("neoforge")) {
+      if (!opts.mcFlags.includes("--neoforge")) opts.mcFlags.push("--neoforge");
+      if (!opts.mcFlags.includes("--enable-preview")) opts.mcFlags.push("--enable-preview");
+    }
+
+    if (vars.demo) {
+      const demoIdx = args.indexOf("--demo");
+      if (demoIdx !== -1) {
+        args.splice(demoIdx, 2);
+      }
+    }
+
+    if (opts.debug) console.log("[Minecraft-Core] JVM args añadidos:", version.arguments?.jvm ?? "Ninguno");
+    if (opts.debug) console.log("[Minecraft-Core] mcFlags actualizados:", opts.mcFlags) ?? "Ninguno";
+    if (opts.debug) console.log("[Minecraft-Core] mcFlags finales:", opts.mcFlags ?? "Todo esta listo");
 
     // Raw args
     let rawArgs: string[] = [];
@@ -290,6 +314,21 @@ export const ArgumentBuilder = {
         }
       }
     }
+
+    // Filtrar argumentos QuickPlay
+    const blockedArgs = new Set([
+      "--quickPlayPath",
+      "--quickPlaySingleplayer",
+      "--quickPlayMultiplayer",
+      "--quickPlayRealms",
+    ]);
+
+    rawArgs = rawArgs.filter((arg, i, arr): arg is string => {
+      if (!arg) return false; // elimina undefined o strings vacíos
+      if (blockedArgs.has(arg)) return false;
+      if (i > 0 && blockedArgs.has(arr[i - 1]!)) return false;
+      return true;
+    });
 
     // mcFlags y userProperties
     if (opts.mcFlags) rawArgs.push(...opts.mcFlags);
@@ -333,7 +372,7 @@ export const ArgumentBuilder = {
     if (opts.window?.fullscreen) cleanedRaw.push("--fullscreen");
     pushIfMissing("--gameDir", gameRoot);
 
-    if (debug) console.log(`[Minecraft-Core][debug] rawArgs finales: ${cleanedRaw.length}`);
+    if (debug) console.log(`[Minecraft-Core] rawArgs finales: ${cleanedRaw.length}`);
     args.push(...cleanedRaw);
 
     return args;

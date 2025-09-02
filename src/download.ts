@@ -168,6 +168,7 @@ export class MinecraftDownloader extends EventEmitter {
 
     const config = {
       id: instancieId,
+      version: options.version || "Unknown",
       manifest: {
         name: options.manifest?.name || "Instancia sin nombre",
         description: options.manifest?.description || "",
@@ -182,8 +183,8 @@ export class MinecraftDownloader extends EventEmitter {
         gameArgs: [],
       },
     };
-    fs.writeFileSync(path.join(instanciePath, "configInstancie.json"), JSON.stringify(config, null, 2), "utf-8");
-    this.emit("info", `configInstancie.json creado en ${instanciePath}`);
+    fs.writeFileSync(path.join(instanciePath, "Manifest-Instancie.json"), JSON.stringify(config, null, 2), "utf-8");
+    this.emit("info", `Manifest-Instancie.json creado en ${instanciePath}`);
 
     return this.start({
       root: instanciePath,

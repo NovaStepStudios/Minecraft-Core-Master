@@ -5,6 +5,6 @@
 
 import * as Mojang from './Mojang';
 import Microsoft from './Microsoft';
-import * as AZauth from './AZauth';
+import * as NovaAZauth from './AZauth';
 
-export { Mojang, Microsoft, AZauth };
+export { Mojang, Microsoft, NovaAZauth };

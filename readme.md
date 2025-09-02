@@ -422,7 +422,7 @@ const path = require('path');
 | `debug`             | `boolean`         | Activa logs de depuración detallados.                                                      | `true`                                         |
 | `memory.min`        | `string`          | Memoria mínima asignada a la JVM.                                                          | `"512M"`, `"1G"`                               |
 | `memory.max`        | `string`          | Memoria máxima asignada a la JVM.                                                          | `"2G"`, `"8G"`                                 |
-| `authenticator`     | `object`          | Objeto devuelto por autenticadores (`Mojang`, `Microsoft`, `AZauth`, etc.).                | `{ access_token, uuid, name, ... }`            |
+| `authenticator`     | `object`          | Objeto devuelto por autenticadores (`Mojang`, `Microsoft`, `NovaAZauth`, etc.).                | `{ access_token, uuid, name, ... }`            |
 | `window.width`      | `number`  | Ancho de ventana.                                | `854`                                         |
 | `window.height`     | `number`  | Alto de ventana.                                                                           | `480`                                          |
 | `window.fullscreen` | `boolean \| null` | Define si se inicia en pantalla completa. `null` = configuración por defecto de Minecraft. | `true`                                         |
@@ -459,7 +459,6 @@ async function MojangLogin() {
 
 MojangLogin();
 ```
-
 | Campo             | Tipo     | Descripción                                                  |
 | ----------------- | -------- | ------------------------------------------------------------ |
 | `access_token`    | `string` | Token de acceso para iniciar sesión y ejecutar Minecraft.    |
@@ -591,10 +590,11 @@ main().catch(err => console.error("💥 Error fatal:", err));
 
 ---
 
-### Login con autenticador personalizado (AZauth / servidor propio)
+### Login con autenticador personalizado (NovaAZauth / servidor propio)
 
 ```js
-const { MinecraftLauncher, AZauth } = require('minecraft-core-master');
+const { MinecraftLauncher } = require('minecraft-core-master');
+const AZauth = require('minecraft-core-master').AZauth.default;
 const path = require('path');
 
 // ---------------- CONFIG ----------------
@@ -607,22 +607,23 @@ const JAVA_PATH = 'java'; // O ruta completa a tu JDK/JRE
   try {
     console.log('Iniciando launcher...');
 
-    // 1️⃣ Login con AZauth
-    const azAuthInstance = new AZauth('https://tuservidor.com'); // URL de tu servidor
+    // 1️⃣ Login con AZauth (es una clase)
+    const azAuthInstance = new AZauth('https://tuservidor');
     const azUser = await azAuthInstance.login('username', 'password');
     
     if (azUser.error) {
-      console.error('❌ Error AZauth:', azUser.reason, azUser.message);
+      console.error('Error AZauth:', azUser.reason, azUser.message);
       return;
     }
     console.log('✅ Login AZauth exitoso:', azUser.name);
+    console.log(azUser);
 
     // 2️⃣ Configuración del launcher
     const launcher = new MinecraftLauncher({
       version: VERSION,
       gameDir: GAME_DIR,
       javaPath: JAVA_PATH,
-      authenticator: azUser, // Pasar directamente el objeto AZauth
+      authenticator: azUser,
       memory: { min: '1G', max: '4G' },
       screen: { width: 1280, height: 720 },
     });
@@ -644,13 +645,12 @@ const JAVA_PATH = 'java'; // O ruta completa a tu JDK/JRE
     console.error('❌ Falló el lanzamiento:', err);
   }
 })();
-
 ```
 
 | Campo / Objeto                  | Tipo              | Descripción                                                                                    |
 | ------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------- |
-| `AZauth.login(username, password)` | `Promise<object>` | Autenticación contra tu servidor AZauth. Devuelve un objeto compatible con `authenticator`.    |
-| `authenticator`                 | object            | Objeto devuelto por AZauth que se pasa directamente a `MinecraftLauncher` para iniciar sesión. |
+| `NovaAZauth.login(username, password)` | `Promise<object>` | Autenticación contra tu servidor NovaAZauth. Devuelve un objeto compatible con `authenticator`.    |
+| `authenticator`                 | object            | Objeto devuelto por NovaAZauth que se pasa directamente a `MinecraftLauncher` para iniciar sesión. |
 
 ---
 
@@ -697,7 +697,7 @@ Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo exten
 
 * ► **Control avanzado de ejecución de Minecraft:** Configuración completa de **memoria JVM, argumentos del juego, ventana, logs y depuración**, incluyendo persistencia de errores y salida en tiempo real.
 
-* ► **Autenticación flexible:** Compatible con **Mojang, Microsoft y AZauth**, permitiendo login offline, online y servidores propios, con manejo seguro de tokens y perfiles.
+* ► **Autenticación flexible:** Compatible con **Mojang, Microsoft y NovaAZauth**, permitiendo login offline, online y servidores propios, con manejo seguro de tokens y perfiles.
 
 * ► **Gestión de logs y errores profesional:** Registros críticos almacenados automáticamente en `root/logs`, capturando stdout/stderr en tiempo real para **diagnósticos precisos y control total del flujo del juego**.
 
@@ -719,4 +719,3 @@ Ya sea que quieras crear tu propio launcher, integrar cosas con **React/Electron
 <p align="center">
   <img align="center" width="150px" src="./docs/creator.png">
 </p>
-

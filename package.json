@@ -1,8 +1,8 @@
 {
   "name": "minecraft-core-master",
-  "version": "7.0.0-beta.1.0.1",
+  "version": "7.0.4",
   "type": "commonjs",
-  "description": "minecraft-core-master is a complete Minecraft core written in TypeScript, capable of downloading and installing official and custom versions (Forge, NeoForge, Fabric, Quilt, LegacyFabric), including all required libraries, assets, and native files. It also supports fully customizable game launching with advanced configuration options.",
+  "description": "Complete Minecraft core in TypeScript. Download, install, and launch official & custom versions (Forge, NeoForge, Fabric, Quilt, LegacyFabric) with full library, asset, and native support.",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,26 +10,59 @@
     "build": "tsc",
     "build:watch": "tsc -w"
   },
-  "keywords": [],
-  "author": "NovaStepStudios",
+  "keywords": [
+    "minecraft",
+    "minecraft-core-master",
+    "minecraft-java-core",
+    "minecraft-launcher-core",
+    "minecraft-node",
+    "launcher",
+    "mojang",
+    "mojang-login",
+    "microsoft",
+    "microsoft-login",
+    "minecraft-premium",
+    "minecraft-nopremium",
+    "typescript",
+    "forge",
+    "fabric",
+    "neoforge",
+    "quilt",
+    "legacyfabric",
+    "mods",
+    "minecraft-core",
+    "nova"
+  ],
+  "author": "NovaStepStudios <stepnicka012@gmail.com>",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaStepStudios/Minecraft-Core-Master.git"
+  },
+  "homepage": "https://github.com/NovaStepStudios/Minecraft-Core-Master#readme",
+  "bugs": {
+    "url": "https://github.com/NovaStepStudios/Minecraft-Core-Master/issues"
+  },
   "files": [
     "resources/**/*",
     "dist/**/*",
-    "docs/**/*",
-    "readme.md",
+    "README.md",
     "package.json"
   ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "devDependencies": {
     "@types/node": "^24.3.0",
     "@types/prompt": "^1.1.9",
-    "@types/semver": "^7.7.0",
     "@types/unzipper": "^0.10.11",
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "node-fetch": "^3.3.2",
     "p-limit": "^7.1.0",
     "prompt": "^1.3.0",
+    "unzipper": "^0.12.3",
     "uuid": "^11.1.0"
   }
 }
