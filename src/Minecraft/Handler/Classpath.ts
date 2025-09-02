@@ -85,22 +85,35 @@ export class ClasspathManager {
         return null;
     }
 
+    private addASMIfMissing(classpath: string[], seen: Set<string>) {
+        // Detectar versión principal de MC
+        const mcVerMatch = this.version.id.match(/^(\d+)\.(\d+)/) ?? [];
+        const mcMajor = mcVerMatch[1] ? parseInt(mcVerMatch[1], 10) : 1;
+        const mcMinor = mcVerMatch[2] ? parseInt(mcVerMatch[2], 10) : 12;
+        // Determinar versión ASM
+        let asmVersion = "9.2"; // default moderno
+        if (mcMajor === 1 && mcMinor <= 7) asmVersion = "4.2";
+        else if (mcMajor === 1 && mcMinor <= 16) asmVersion = "5.2";
+        // Añadir asm solo si no está en el classpath
+        if (!classpath.some(p => p.includes("asm"))) {
+            const asmPath = path.join(this.root, "libraries", "org", "ow2", "asm", "asm", asmVersion, `asm-${asmVersion}.jar`);
+            if (fs.existsSync(asmPath) && !seen.has(asmPath)) {
+                classpath.push(asmPath);
+                seen.add(asmPath);
+            }
+        }
+    }
     buildClasspath(): ClasspathResult {
         const classpath: string[] = [];
         const seen = new Set<string>();
         const pushIfExists = (p: string) => { if (!seen.has(p)) { classpath.push(p); seen.add(p); } };
-
-        const libs = this.mergeInheritedLibraries(this.version)
-            .filter(lib => isAllowed(lib.rules));
-
+        const libs = this.mergeInheritedLibraries(this.version).filter(lib => isAllowed(lib.rules));
         const isOptiFine = this.version.id.toLowerCase().includes("optifine");
         const needsLaunchWrapper = this.version.id.startsWith("1.7") || isOptiFine || this.version.id.toLowerCase().includes("fml");
-
         // Rutas especiales
         let launchWrapperPath: string | null = null;
         let bootstrapPath: string | null = null;
         let universalPath: string | null = null;
-
         for (const lib of libs) {
             const libPath = this.resolveLibPath(lib);
             if (!libPath) continue;
@@ -108,7 +121,6 @@ export class ClasspathManager {
             if (lib.name?.includes("bootstraplauncher")) bootstrapPath = libPath;
             if (lib.name?.includes("neoforge") && libPath.includes("universal")) universalPath = libPath;
         }
-
         if (needsLaunchWrapper) {
             if (!launchWrapperPath) {
                 const lwVersion = this.version.id.startsWith("1.7") ? "1.5" : "1.12";
@@ -116,17 +128,14 @@ export class ClasspathManager {
             }
             pushIfExists(launchWrapperPath);
         }
-
         if (this.version.inheritsFrom) {
             const baseJar = path.resolve(this.root, "versions", this.version.inheritsFrom, `${this.version.inheritsFrom}.jar`);
             pushIfExists(baseJar);
         }
-
         const versionJar = path.resolve(this.root, "versions", this.version.id, `${this.version.id}.jar`);
         if (isOptiFine) pushIfExists(versionJar);
         if (bootstrapPath) pushIfExists(bootstrapPath);
         if (universalPath) pushIfExists(universalPath);
-
         for (const lib of libs) {
             const libPath = this.resolveLibPath(lib);
             if (!libPath) continue;
@@ -137,15 +146,15 @@ export class ClasspathManager {
             ) continue;
             pushIfExists(libPath);
         }
-
         if (!isOptiFine) pushIfExists(versionJar);
-
+        // Añadir ASM automáticamente si falta
+        this.addASMIfMissing(classpath, seen);
+        // Combinar natives de versión padre y actual
         let nativesDir = path.resolve(this.root, "versions", this.version.id, "natives");
         if (this.version.inheritsFrom) {
             const parentNatives = path.resolve(this.root, "versions", this.version.inheritsFrom, "natives");
-            nativesDir = nativesDir || parentNatives;
+            if (fs.existsSync(parentNatives)) nativesDir = parentNatives;
         }
-
         return {
             classpath,
             classpathString: classpath.join(path.delimiter),

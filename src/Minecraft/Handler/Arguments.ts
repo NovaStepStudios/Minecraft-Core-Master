@@ -187,7 +187,7 @@ export const ArgumentBuilder = {
     classPath: string[] | string;
   }) {
     const args: string[] = [];
-    const debug = !!opts.debug;
+    const debug = !!opts.debug || false;
     const javaPath = opts.javaPath || "java";
 
     // Java version
@@ -235,13 +235,13 @@ export const ArgumentBuilder = {
       const cleanedClassPath = classPathFiltered.filter((p) => !moduleSet.has(path.resolve(p)));
       if (!modulePath.length) throw new Error("[Minecraft-Core] Falta jar para module-path (NeoForge)");
       if (!cleanedClassPath.length) throw new Error("[Minecraft-Core] classPath vacío tras separar module-path (NeoForge)");
-      if (debug) console.log("[Minecraft-Core] module-path:", modulePath.length, "class-path:", cleanedClassPath.length);
+      if (debug === true) console.log("[Minecraft-Core] module-path:", modulePath.length, "class-path:", cleanedClassPath.length);
       args.push("--module-path", modulePath.join(path.delimiter));
       args.push("--class-path", cleanedClassPath.join(path.delimiter));
     } else {
       const filteredClassPath = filterLwjglDuplicates(uniquePaths(classPathArray));
       if (!filteredClassPath.length) throw new Error("[Minecraft-Core] classPath vacío o inválido");
-      if (debug) console.log("[Minecraft-Core] classpath count:", filteredClassPath.length);
+      if (debug === true) console.log("[Minecraft-Core] classpath count:", filteredClassPath.length);
       args.push("-cp", filteredClassPath.join(path.delimiter));
     }
 
@@ -372,7 +372,7 @@ export const ArgumentBuilder = {
     if (opts.window?.fullscreen) cleanedRaw.push("--fullscreen");
     pushIfMissing("--gameDir", gameRoot);
 
-    if (debug) console.log(`[Minecraft-Core] rawArgs finales: ${cleanedRaw.length}`);
+    if (debug === true) console.log(`[Minecraft-Core] rawArgs finales: ${cleanedRaw.length}`);
     args.push(...cleanedRaw);
 
     return args;

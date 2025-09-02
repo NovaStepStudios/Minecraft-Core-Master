@@ -90,16 +90,22 @@ export class MinecraftClientDownloader extends EventEmitter {
     return new Promise<void>((resolve, reject) => {
       const file = fs.createWriteStream(dest);
       https.get(url, res => {
-        if (res.statusCode !== 200) return reject(new Error(`[HTTP] Error HTTP: ${res.statusCode}`));
-        const totalSize = parseInt(res.headers["content-length"] || "0", 10);
+        if (res.statusCode !== 200) {
+          file.close();
+          fs.unlink(dest, () => {});
+          return reject(new Error(`[HTTP] Error HTTP: ${res.statusCode}`));
+        }
+        const totalSize = parseInt(res.headers["content-length"] as string, 10) || 0;
         let downloaded = 0;
         res.on("data", chunk => {
           downloaded += chunk.length;
-          let percent = totalSize > 0 ? (downloaded / totalSize) * 100 : 0;
-          onProgress?.(downloaded, totalSize, percent);
+          const percent = totalSize > 0 ? (downloaded / totalSize) * 100 : 0;
+          if (onProgress) onProgress(downloaded, totalSize, percent);
         });
         res.pipe(file);
-        file.on("finish", () => file.close(err => err ? reject(err) : resolve()));
+        file.on("finish", () => {
+          file.close(err => (err ? reject(err) : resolve()));
+        });
         file.on("error", err => {
           file.close();
           fs.unlink(dest, () => {});

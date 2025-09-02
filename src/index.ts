@@ -7,12 +7,14 @@
 import { MinecraftDownloader } from "./download";
 import { MinecraftLauncher } from "./launch";
 // import { LoaderInstaller } from "./Minecraft-Loaders/index"
+import { MrpackExtractor } from "./Minecraft-Mods/MrpackExtractor";
 import * as Mojang from './Authenticator/Mojang';
 import Microsoft from './Authenticator/Microsoft';
 import NovaAZauth from './Authenticator/NovaAZauth';
 export {
     MinecraftDownloader as MinecraftDownloader,
     MinecraftLauncher as MinecraftLauncher,
+    MrpackExtractor as MrpackExtractor,
     // LoaderInstaller as LoaderInstaller,
     Microsoft as Microsoft,
     NovaAZauth as NovaAZauth,
