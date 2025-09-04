@@ -4,7 +4,7 @@
     "outDir": "./dist",
     "target": "ES2022",
     "module": "CommonJS",
-    "lib": ["ES2022"],
+    "lib": ["ES2022","DOM"],
     "types": ["node"],
     "sourceMap": false,                 // Mapas de depuración
     "declaration": true,               // Generar .d.ts (tipos)

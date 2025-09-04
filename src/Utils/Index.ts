@@ -71,6 +71,9 @@ export function loader(type: string) {
     quilt: {
       meta: 'https://meta.quiltmc.org/v3/versions',
       json: 'https://meta.quiltmc.org/v3/versions/loader/${version}/${build}/profile/json'
+    },
+    curseforge: {
+      api: "https://api.curseforge.com/v1"
     }
   };
   return data[type];

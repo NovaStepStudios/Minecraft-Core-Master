@@ -4,6 +4,7 @@
  * @license Apache-2.0
  * @link https://www.apache.org/licenses/LICENSE-2.0
  */
+
 import fs from "fs";
 import path from "path";
 import https from "https";
@@ -48,7 +49,7 @@ export class MinecraftLibrariesDownloader extends EventEmitter {
   }
   public async start(): Promise<void> {
     await this.#ensureDir(this.#libsDir);
-    const manifest = await this.#fetchJSON<any>("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json");
+    const manifest = await this.#fetchJSON<any>("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json");
     const versionMeta = manifest.versions.find((v: any) => v.id === this.#version);
     if (!versionMeta) throw new Error(`[Downloader] Versión ${this.#version} no encontrada.`);
     const versionJSON = await this.#fetchJSON<any>(versionMeta.url);
@@ -193,13 +194,23 @@ export class MinecraftLibrariesDownloader extends EventEmitter {
   }
   async #ensureDir(dir: string) { await fs.promises.mkdir(dir, { recursive: true }); }
   async #runConcurrent<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {
+    let completed = 0; // contador global y seguro
     const queue = [...items];
+
     const workers = new Array(limit).fill(null).map(async () => {
-      while (queue.length > 0) {
-        const item = queue.shift();
-        if (item) await worker(item);
+      while (true) {
+        let item: T | undefined;
+        // sincronizamos el shift
+        item = queue.shift();
+        if (!item) break;
+
+        await worker(item);
+
+        completed++;
+        this.#emitProgress(completed, items.length);
       }
     });
+
     await Promise.all(workers);
   }
   #emitProgress(current: number, total: number) {

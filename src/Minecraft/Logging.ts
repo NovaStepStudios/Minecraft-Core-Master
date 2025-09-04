@@ -9,7 +9,7 @@ import https from "https";
 import fs from "fs";
 import path from "path";
 
-const VERSION_MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+const VERSION_MANIFEST_URL = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
 async function download(url: string, timeout = 15000): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
     const req = https.get(url, (res) => {

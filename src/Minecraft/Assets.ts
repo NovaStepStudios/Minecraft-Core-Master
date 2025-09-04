@@ -56,7 +56,7 @@ export class MinecraftAssetsDownloader extends EventEmitter {
     try {
       await this.#ensureDirs();
       const versionManifest = await this.#fetchJSON<any>(
-        "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+        "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
       );
       const versionMeta = versionManifest?.versions?.find((v: any) => v.id === this.#version);
       if (!versionMeta) throw new Error(`La versión ${this.#version} no se encontró.`);

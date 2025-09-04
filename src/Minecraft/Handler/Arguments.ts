@@ -125,11 +125,57 @@ function splitModuleAndClassPath(classPath: string[]) {
 
   for (const jar of unique) {
     const l = jar.toLowerCase();
-    if (l.includes("securejarhandler") || l.includes("bootstraplauncher")) modulePath.push(jar);
-    else classPathFiltered.push(jar);
+
+    if (
+      l.includes("securejarhandler") ||
+      l.includes("bootstraplauncher") ||
+      l.includes("modlauncher") ||
+      l.includes("asm") ||
+      l.includes("jarjar")
+    ) {
+      modulePath.push(jar);
+    } else {
+      classPathFiltered.push(jar);
+    }
   }
 
-  return { modulePath: uniquePaths(modulePath), classPathFiltered: uniquePaths(classPathFiltered) };
+  return {
+    modulePath: uniquePaths(modulePath),
+    classPathFiltered: uniquePaths(classPathFiltered),
+  };
+}
+
+function getNeoForgeJars(libraryDir: string) {
+  const jars: string[] = [];
+
+  const cpwModsDir = path.join(libraryDir, "cpw", "mods");
+  if (fs.existsSync(cpwModsDir)) {
+    fs.readdirSync(cpwModsDir).forEach(mod => {
+      const modPath = path.join(cpwModsDir, mod);
+      if (fs.statSync(modPath).isDirectory()) {
+        fs.readdirSync(modPath).forEach(ver => {
+          const jar = path.join(modPath, ver, `${mod}-${ver}.jar`);
+          if (fs.existsSync(jar)) jars.push(jar);
+        });
+      }
+    });
+  }
+
+  const asmDir = path.join(libraryDir, "org", "ow2", "asm");
+  if (fs.existsSync(asmDir)) {
+    fs.readdirSync(asmDir).forEach(pkg => {
+      const pkgPath = path.join(asmDir, pkg);
+      if (fs.statSync(pkgPath).isDirectory()) {
+        fs.readdirSync(pkgPath).forEach(ver => {
+          const jar = path.join(pkgPath, ver, `${pkg}-${ver}.jar`);
+          if (fs.existsSync(jar)) jars.push(jar);
+        });
+      }
+    });
+  }
+
+  const jarSet = new Set<string>();
+  return jars.map(j => path.resolve(j)).filter(j => !jarSet.has(j) && jarSet.add(j));
 }
 
 function getJavaVersion(javaPath: string) {
@@ -225,23 +271,37 @@ export const ArgumentBuilder = {
     if (typeof classPath === "string") classPathArray = classPath.split(path.delimiter).map((p) => p.replace(/^"(.*)"$/, "$1"));
     else if (Array.isArray(classPath)) classPathArray = classPath;
 
-    // Classpath
-    const isNeoForge = version.id?.toLowerCase().includes("neoforge") || version.type?.toLowerCase() === "neoforge";
+    const isNeoForge =
+      version.id?.toLowerCase().includes("neoforge") ||
+      version.type?.toLowerCase() === "neoforge";
 
     if (isNeoForge) {
-      args.unshift("--add-opens", "java.base/java.lang.invoke=ALL-UNNAMED");
-      const { modulePath, classPathFiltered } = splitModuleAndClassPath(classPathArray);
-      const moduleSet = new Set(modulePath.map((p) => path.resolve(p)));
-      const cleanedClassPath = classPathFiltered.filter((p) => !moduleSet.has(path.resolve(p)));
-      if (!modulePath.length) throw new Error("[Minecraft-Core] Falta jar para module-path (NeoForge)");
-      if (!cleanedClassPath.length) throw new Error("[Minecraft-Core] classPath vacío tras separar module-path (NeoForge)");
-      if (debug === true) console.log("[Minecraft-Core] module-path:", modulePath.length, "class-path:", cleanedClassPath.length);
-      args.push("--module-path", modulePath.join(path.delimiter));
-      args.push("--class-path", cleanedClassPath.join(path.delimiter));
+      const neoForgeJars = getNeoForgeJars(path.join(opts.root, "libraries"));
+      
+      // Separar módulos y classpath
+      const { modulePath, classPathFiltered } = splitModuleAndClassPath(neoForgeJars);
+
+      args.push(
+        "-p", modulePath.join(path.delimiter),
+        "--add-modules", "ALL-MODULE-PATH",
+        "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+        "--add-opens", "java.base/java.util=ALL-UNNAMED",
+        "--add-opens", "java.base/java.lang.invoke=ALL-UNNAMED"
+      );
+
+      if (classPathFiltered.length) {
+        args.push("-cp", classPathFiltered.join(path.delimiter));
+      }
+
+      args.push("cpw.mods.bootstraplauncher.BootstrapLauncher");
     } else {
+      // Vanilla/Fabric
       const filteredClassPath = filterLwjglDuplicates(uniquePaths(classPathArray));
-      if (!filteredClassPath.length) throw new Error("[Minecraft-Core] classPath vacío o inválido");
-      if (debug === true) console.log("[Minecraft-Core] classpath count:", filteredClassPath.length);
+      if (!filteredClassPath.length)
+        throw new Error("[Minecraft-Core] classPath vacío o inválido");
+
+      if (debug) console.log("[Minecraft-Core] classpath count:", filteredClassPath.length);
+
       args.push("-cp", filteredClassPath.join(path.delimiter));
     }
 

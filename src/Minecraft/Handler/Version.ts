@@ -16,6 +16,7 @@ export interface Library {
             sha1: string;
             size: number;
         };
+        classifiers?: Record<string, { path: string; url?: string; sha1?: string; size?: number }>;
     };
 }
 export interface VersionArguments {
@@ -41,6 +42,7 @@ export interface VersionJSON {
     javaVersion?: { majorVersion: number; component?: string } | undefined;
     logging?: any;
 }
+
 export class VersionHandler {
     private root: string;
     private versionsRoot: string;
@@ -57,6 +59,7 @@ export class VersionHandler {
         if (versionData.inheritsFrom) {
             const parent = this.loadVersion(versionData.inheritsFrom);
             versionData = this.mergeVersions(parent, versionData);
+            versionData.libraries = this.cleanLibraries(versionData.libraries ?? []);
         }
         versionData.arguments = this.normalizeArguments(versionData);
         return versionData;
@@ -119,5 +122,24 @@ export class VersionHandler {
             return { game: version.minecraftArguments.split(" "), jvm: [] };
         }
         return { game: [], jvm: [] };
+    }
+    private cleanLibraries(libs: Library[]): Library[] {
+        const seen = new Map<string, Library>();
+        for (const lib of libs) {
+            if (!lib.name) continue;
+            if (seen.has(lib.name)) {
+                const existing = seen.get(lib.name)!;
+                if (lib.downloads?.artifact && !existing.downloads?.artifact) {
+                    existing.downloads = { ...existing.downloads, artifact: lib.downloads.artifact };
+                }
+                if (lib.downloads?.classifiers) {
+                    existing.downloads = existing.downloads ?? {};
+                    existing.downloads.classifiers = { ...(existing.downloads.classifiers ?? {}), ...lib.downloads.classifiers };
+                }
+            } else {
+                seen.set(lib.name, lib);
+            }
+        }
+        return Array.from(seen.values());
     }
 }

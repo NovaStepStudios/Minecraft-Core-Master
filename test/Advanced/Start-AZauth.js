@@ -1,41 +1,32 @@
-const { MinecraftLauncher, Mojang, AZauth } = require('../../dist/index');
+const { MinecraftLauncher, Mojang, NovaAZauth } = require('../../dist/index');
 const path = require('path');
 
 // ---------------- CONFIG ----------------
 const GAME_DIR = path.resolve('./.minecraft');
 const VERSION = '1.12.2';
-const JAVA_PATH = 'java'; // O ruta completa a tu JDK/JRE
-// ---------------------------------------
+const JAVA_PATH = 'C:/Program Files/Java/jre1.8.0_461/bin';
 
 (async () => {
   try {
     console.log('Iniciando launcher...');
 
-    // 1️⃣ Login con Mojang
-    const mojangAuth = await Mojang.login('tuEmail@m.com', 'tuPassword');
-    if (mojangAuth.error) {
-      console.error('Error al loguear con Mojang:', mojangAuth.reason, mojangAuth.message);
-      return;
-    }
-    console.log('Login Mojang exitoso:', mojangAuth.name);
 
-    // 2️⃣ Login con AZauth (opcional si quieres usarlo también)
-    const azAuthInstance = new AZauth('https://tuservidor.com'); // tu servidor AZauth
-    const azUser = await azAuthInstance.login('username', 'password');
+    // Login con AZauth (opcional si quieres usarlo también)
+    const azAuthInstance = new NovaAZauth('https://novastep-studios.web.app/mcm/users'); // tu servidor AZauth
+    const azUser = await azAuthInstance.login('Stepnicka012', '12345');
     if (azUser.error) {
       console.error('Error AZauth:', azUser.reason, azUser.message);
       return;
     }
     console.log('Login AZauth exitoso:', azUser.name);
 
-    // 3️⃣ Configuración del launcher
+    // Configuración del launcher
     const launcher = new MinecraftLauncher({
       version: VERSION,
       gameDir: GAME_DIR,
       javaPath: JAVA_PATH,
-      authenticator: mojangAuth, // Puedes cambiar a azUser si quieres usar AZauth
-      memory: { min: '1G', max: '4G' },
-      screen: { width: 1280, height: 720 },
+      authenticator: azUser,
+      memory: { min: '1G', max: '4G' }, 
     });
 
     // 4️⃣ Eventos del launcher
@@ -50,7 +41,6 @@ const JAVA_PATH = 'java'; // O ruta completa a tu JDK/JRE
       });
     });
 
-    // 5️⃣ Lanzar Minecraft
     await launcher.launch();
 
   } catch (err) {

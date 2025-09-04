@@ -216,7 +216,7 @@ export class MinecraftNativesDownloader extends EventEmitter {
   }
 
   async #fetchVersionJSON(version: string): Promise<any> {
-    const manifest = await this.#fetchJSON<any>("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json");
+    const manifest = await this.#fetchJSON<any>("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json");
     const versionMeta = manifest.versions.find((v: any) => v.id === version);
     if (!versionMeta) throw new Error(`Versión ${version} no encontrada`);
     return this.#fetchJSON<any>(versionMeta.url);

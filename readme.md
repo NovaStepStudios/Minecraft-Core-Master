@@ -12,7 +12,9 @@
 
 Desarrollado por **NovaStep Studios** con un enfoque en rendimiento, control total, personalización y compatibilidad total con versiones *legacy*, *modernas* y con Loaders populares.
 
----
+Este proyecto no está afiliado ni respaldado oficialmente por **Modrinth.**
+
+[Modrinth](https://modrinth.com)
 
 ¿Tienes dudas o quieres charlar con la comunidad?  
 Únete a nuestro [Discord Oficial](https://discord.gg/YAqpTWQByM) y recibe ayuda rápida, noticias y tips directamente de otros usuarios o de **``Stepnicka!``**.  
@@ -43,7 +45,10 @@ Mercado Pago :
 
 **``pnpm add minecraft-core-master``**
 
-Dependencias que utiliza : **p-limit, prompt, uuid**
+Dependencias que utiliza : **p-limit, prompt, uuid, adm-zip, node-fetch, adm-zip**
+
+Compatible con : **Module**, **CommonJS**
+
 ## **Componentes principales**
 
 
@@ -590,7 +595,9 @@ main().catch(err => console.error("💥 Error fatal:", err));
 
 ---
 
-### NovaAZauth
+<p align="center">
+  <h1 align="center">NovaAZauth</h1>
+</p>
 
 **NovaAZauth** es un **autenticador personalizado de Minecraft** que permite iniciar sesión contra un **servidor propio** (en este caso `https://nincraft.fr`) en lugar de los servidores oficiales de Mojang o Microsoft. Está diseñado para integrarse de forma directa con **MinecraftLauncher** de tu proyecto, generando un objeto `authenticator` completamente compatible para ejecutar Minecraft con credenciales gestionadas por tu propio backend.
 
@@ -604,7 +611,7 @@ main().catch(err => console.error("💥 Error fatal:", err));
 
 ```js
 const prompt = require('prompt')
-const { NovaAZauth, MinecraftLauncher } = require('../../dist/index');
+const { NovaAZauth, MinecraftLauncher } = require('minecraft-core-master');
 const auth = new NovaAZauth('https://nincraft.fr');
 const fs = require('fs');
 
@@ -702,13 +709,133 @@ main()
 | `meta`            | object | Información extra, como tipo de autenticador y si está online.                                                                                                       |
 | `profile.skins`   | array  | Lista de skins asociadas al usuario (URL/base64).                                                                                                                    |
 
+<p align="center">
+  <img align="center" src="./docs/modrinth.png" width="200px">
+  <h1 align="center">MrpackExtractor</h1>
+  <p align="center">Este proyecto no está afiliado ni respaldado oficialmente por <strong>Modrinth.</strong> El logo de <strong>Modrinth se utiliza únicamente con fines identificativos y de referencia</strong><p>
+</p>
+
+**MrpackExtractor** Sirve para extraer los archivos con formato ``.mrpack`` de Modrinth, esto sirve para tus launcher de Mods!
+Permite Extraer el ``.mrpack`` Y descargar los Mods/Jar que ayan en el ModPack, hace verificacion para evitar Reescribir archivos, Verifica SHA
+
+### Ejemplo de Uso :
+```js
+const path = require('path');
+const { MrpackExtractor } = require('minecraft-core-master');
+
+async function main() {
+  const extractor = new MrpackExtractor();
+
+  // Escuchamo el Progreso del archivo a Descargar
+  extractor.on('progress', (progress) => {
+    console.log(`Progreso: ${progress}`);
+  });
+  // Devuelve el nombre del archivo que se a descargado
+  extractor.on('fileName', (msg) => {
+    console.log('Archivo :',msg);
+  });
+  // Escuchamos el evento al terminar Descargar
+  extractor.on('done', () => {
+    console.log('Modpack instalado correctamente.');
+  });
+  // Errores Durante la descarga
+  extractor.on('error', (err) => {
+    console.error('Error detectado:', err.message, context);
+  });
+  // Evento para poder escuchar si ay un archivo que ay que volver a descargar por mala conexion
+  extractor.on('retry', (file) => {
+    console.log(`Reintentando descarga: ${file}`);
+  });
+
+  try {
+    await extractor.extract({
+      root: '.minecraft', // Ruta de carpeta de Minecraft para extraer archivos ( Mods, Config, Etc... )
+      filePath: path.join(__dirname, 'FileTest/Reimagined Intro 1.21.4.mrpack'), // Archivo .mrPack
+      keepMrpack: true,  // opcional [ Mantener el .mrpack intacto ]
+      concurry: 5,       // descargas paralelas 
+      recursive: true,   // sobrescribir archivos si existen
+      verify: true       // verificar SHA
+    });
+  } catch (err) {
+    console.error('Fallo grave durante la instalación del modpack:', err);
+  }
+}
+main();
+```
+
+---
+<p align="center">
+  <img align="center" src="./docs/curseforge.png" width="200px">
+  <h1 align="center">CFModpackExtractor</h1>
+</p>
+
+`CFModpackExtractor` es una herramienta en Node.js para **descargar e instalar modpacks de CurseForge** automáticamente desde un archivo `manifest.json`. Permite descargas paralelas, manejo de errores, progreso en tiempo real y copiado de overrides.
+
+## 🔹 Uso Básico
+
+```ts
+import path from 'path';
+import { CFModpackExtractor } from './CFModpackExtractor';
+
+async function main() {
+  const extractor = new CFModpackExtractor();
+
+  // Eventos
+  extractor.on('progress', (file, percent) => console.log(`[PROGRESS] ${file} | ${percent}`));
+  extractor.on('fileName', (name) => console.log(`[FILE] ${name} descargado.`));
+  extractor.on('retry', (file, attempt, msg) => console.log(`[RETRY] ${file} intento ${attempt}: ${msg}`));
+  extractor.on('errors', (err) => console.error(`[ERROR]`, err.message));
+  extractor.on('done', () => console.log('[DONE] Modpack instalado correctamente.'));
+
+  // Extraer modpack
+  try {
+    await extractor.extract({
+      root: path.join(__dirname, '.minecrafttest'), // Carpeta donde se instalarán los mods
+      filePath: path.join(__dirname, 'Builders Paradise-1.1.4/manifest.json'), // Archivo JSON del modpack
+      apiKey: 'TU_API_KEY_DE_CURSEFORGE', // Opcional | Ya trae uno por defecto proporcionado por Curseforge Studios
+      concurrency: 5,   // Descargas paralelas
+      recursive: true,  // Sobrescribir mods existentes
+      keepJson: true,   // Mantener JSON original
+      maxRetries: 3,    // Reintentos por archivo
+    });
+  } catch (err) {
+    console.error('Fallo grave durante la instalación del modpack:', err);
+  }
+}
+
+main();
+```
+
+---
+
+## 🔹 Opciones de `extract`
+
+| Opción        | Tipo    | Descripción                                                                  |
+| ------------- | ------- | ---------------------------------------------------------------------------- |
+| `root`        | string  | Carpeta donde se instalarán los mods.                                        |
+| `filePath`    | string  | Ruta al archivo `manifest.json` del modpack.                                 |
+| `apiKey`      | string  | API Key de CurseForge. Necesario para descargas privadas o muchas descargas. |
+| `concurrency` | number  | Número de descargas simultáneas (por defecto: false = secuencial).           |
+| `recursive`   | boolean | Sobrescribir mods existentes (por defecto: false).                           |
+| `keepJson`    | boolean | Mantener el JSON original en la carpeta cache (por defecto: true).           |
+| `maxRetries`  | number  | Cantidad máxima de reintentos por archivo (por defecto: 3).                  |
+
+---
+
+## 🔹 Eventos
+
+* `progress(file, percent)` → Avance de descarga de cada archivo.
+* `fileName(name)` → Archivo descargado correctamente.
+* `retry(file, attempt, msg)` → Reintento de descarga por error.
+* `errors(err)` → Error crítico durante la instalación.
+* `done()` → Modpack instalado exitosamente.
+* `fileInfo({ fileName, required })` → Información de cada mod descargado.
 
 
 ---
 
 > **Nota:** Este proyecto soporta el lanzamiento y gestión de **todas las versiones oficiales de Minecraft**, desde las más recientes hasta las más antiguas, incluyendo snapshots, betas, alphas y versiones históricas como la legendaria **rd-132211**. No importa qué tan vintage o moderna sea la versión, Minecraft-Core-Master la ejecutará con total estabilidad y rendimiento.
 
----
 
 ### 📁 Gestión avanzada de logs y errores
 
@@ -723,15 +850,25 @@ main()
 Incluimos ejemplos robustos en la carpeta `test/` para que puedas probar cada componente de forma independiente o integrada. Estos scripts incluyen manejo de eventos detallado, seguimiento de progreso y captura de errores:
 
 ```bash
-node test/Download.js      # Descarga y prepara cualquier versión de Minecraft con validación.
-node test/Start.js        # Ejecuta Minecraft con configuración avanzada y monitoreo. En Mantenimiento
+node test/Instancie/StartInstancie.js       # Ejecuta Minecraft En una Instancia con Config y usuario Propio.
+node test/Instancie/CreateInstancie.js      # Crea Tu Instancia de Minecraft!
+
+node test/Login/NovaAZauth.js               # Ejecuta Minecraft Con Tu Propio Servidor de Authenticacion.
+node test/Login/Mojang.js                   # Ejecuta Minecraft Con Mojang.
+node test/Login/Microsoft.js                # Ejecuta Minecraft Con Microsoft.
+
+node test/Modpacks/CFModpackExtractor.js       # Descarga y prepara Tu modpack de Curseforge.
+node test/Modpacks/mrpackExtractor.js       # Descarga y prepara Tu modpack de Modrinth.
+
+node test/Download.js                       # Descarga y prepara cualquier versión de Minecraft con validación.
+node test/Start.js                          # Ejecuta Minecraft con configuración avanzada y monitoreo. En Mantenimiento
 ```
 
 Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo extender o integrar Minecraft-Core-Master en tus proyectos.
 
-![npm](./docs/modern.webp)
-
----
+<p align="center">
+  <img align="center" src="./docs/modern.webp">
+</p>
 
 ## 🧪 Características técnicas sobresalientes
 
@@ -745,7 +882,7 @@ Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo exten
 
 * ► **Eventos en tiempo real:** Feedback dinámico de progreso, errores, advertencias e información mediante `EventEmitter`, ideal para **interfaces gráficas, consolas o sistemas de monitoreo**.
 
-* ► **Multiplataforma real:** Comprobado en **Windows, Linux y macOS**, con **manejo automático de archivos nativos** y rutas Java, garantizando ejecución sin problemas en cualquier sistema.
+* ► **Multiplataforma :** Comprobado en **Windows, Linux y macOS**, con **manejo automático de archivos nativos** y rutas Java, garantizando ejecución sin problemas en cualquier sistema.
 
 * ► **Control avanzado de ejecución de Minecraft:** Configuración completa de **memoria JVM, argumentos del juego, ventana, logs y depuración**, incluyendo persistencia de errores y salida en tiempo real.
 
@@ -759,8 +896,6 @@ Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo exten
 
 * ► **Compatibilidad histórica:** Capaz de lanzar versiones legendarias y modernas, desde **rd-132211** hasta las más recientes, con estabilidad y rendimiento garantizado.
 
----
-
 ## 🏢 Sobre NovaStep Studios
 
 Minecraft-Core-Master nació porque me encanta Minecraft y la programación. Soy **Santiago Stepnicka (Stepnicka)**, desarrollador fullstack, y mi objetivo con este proyecto es que tengas **control total, estabilidad y buen rendimiento** en el juego, sin complicarte la vida.
@@ -771,3 +906,13 @@ Ya sea que quieras crear tu propio launcher, integrar cosas con **React/Electron
 <p align="center">
   <img align="center" width="150px" src="./docs/creator.png">
 </p>
+
+Espero que me sigan, ¡tengo como 500 versiones de MC y mil errores que enfrentar en solitario!  
+Investigo cómo funciona **X cosa mágica del juego, o funcion**, y luego me rompo la cabeza para  
+meterla en el paquete sin que explote todo. :v  
+
+Un héroe sin capa... 🦸‍♀️  
+
+> [NovaStep Studios en GitHub](https://github.com/NovaStepStudios)
+
+> [Minecraft-Core-Master en GitHub](https://github.com/NovaStepStudios/Minecraft-Core-Master)

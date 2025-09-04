@@ -1,6 +1,6 @@
 const prompt = require('prompt')
 const { NovaAZauth, MinecraftLauncher } = require('../../dist/index');
-const auth = new NovaAZauth('https://nincraft.fr');
+const auth = new NovaAZauth('http://localhost:3000');
 const fs = require('fs');
 
 let mc
