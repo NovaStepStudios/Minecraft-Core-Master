@@ -1,5 +1,5 @@
 <p align="center">
-  <img align="center" width="400px" src="./docs/icon.png">
+  <img align="center" src="./docs/Logo/minecraft_tittle.png">
 </p>
 
 ![Stable Version](https://img.shields.io/npm/v/minecraft-core-master?logo=nodedotjs&label=stable%20version)
@@ -53,8 +53,7 @@ Compatible con : **Module**, **CommonJS**
 
 
 <p align="center">
-  <img align="center" width="auto" src="./docs/multi-version.webp">
-  <h1 align="center">MinecraftDownloader</h1>
+  <img align="center" width="auto" src="./docs/ComponentsTittle/minecraft_downloader.png">
 </p>
 
 Clase que descarga todos los recursos necesarios para ejecutar Minecraft:
@@ -306,8 +305,7 @@ Puedes ver ejemplos en la carpeta de pruebas:
 
 ---
 <p align="center">
-  <img align="center" width="auto" src="./docs/players.png">
-  <h1 align="center">MinecraftLauncher</h1>
+  <img align="center" width="auto" src="./docs/ComponentsTittle/minecraft_launcher.png">
 </p>
 
 Clase que permite **lanzar Minecraft** con control total: configuración de memoria, ruta Java, ventana, argumentos, y sistema de logs y errores con persistencia.
@@ -896,7 +894,11 @@ Estos ejemplos sirven tanto para pruebas rápidas como para entender cómo exten
 
 * ► **Compatibilidad histórica:** Capaz de lanzar versiones legendarias y modernas, desde **rd-132211** hasta las más recientes, con estabilidad y rendimiento garantizado.
 
-## 🏢 Sobre NovaStep Studios
+---
+
+<p align="center">
+  <img src="./docs/Logo/minecraft_author.png">
+</p>
 
 Minecraft-Core-Master nació porque me encanta Minecraft y la programación. Soy **Santiago Stepnicka (Stepnicka)**, desarrollador fullstack, y mi objetivo con este proyecto es que tengas **control total, estabilidad y buen rendimiento** en el juego, sin complicarte la vida.
 
