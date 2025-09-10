@@ -3,7 +3,7 @@
  * @alias StepnickaSantiago
  * @license Apache-2.0
  * @link https://www.apache.org/licenses/LICENSE-2.0
- * @external https://music.youtube.com/watch?v=DVXMmKadzYU&si=ofY-WTm-mFeVsehz Disfrutalo :)
+ * @external https://music.youtube.com/watch?v=NhbwPt-HuzU&si=lqg9BJuRqLj0Cf5n Disfrutalo :)
  */
 
 import path from "path";
@@ -11,6 +11,7 @@ import os from "os";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import child from "child_process";
+import { ClasspathManager } from "./Classpath";
 
 const platformMap: Record<string, string> = {
   win32: "windows",
@@ -118,66 +119,6 @@ function uniquePaths(paths: string[] = []) {
   }, []);
 }
 
-function splitModuleAndClassPath(classPath: string[]) {
-  const modulePath: string[] = [];
-  const classPathFiltered: string[] = [];
-  const unique = uniquePaths(classPath);
-
-  for (const jar of unique) {
-    const l = jar.toLowerCase();
-
-    if (
-      l.includes("securejarhandler") ||
-      l.includes("bootstraplauncher") ||
-      l.includes("modlauncher") ||
-      l.includes("asm") ||
-      l.includes("jarjar")
-    ) {
-      modulePath.push(jar);
-    } else {
-      classPathFiltered.push(jar);
-    }
-  }
-
-  return {
-    modulePath: uniquePaths(modulePath),
-    classPathFiltered: uniquePaths(classPathFiltered),
-  };
-}
-
-function getNeoForgeJars(libraryDir: string) {
-  const jars: string[] = [];
-
-  const cpwModsDir = path.join(libraryDir, "cpw", "mods");
-  if (fs.existsSync(cpwModsDir)) {
-    fs.readdirSync(cpwModsDir).forEach(mod => {
-      const modPath = path.join(cpwModsDir, mod);
-      if (fs.statSync(modPath).isDirectory()) {
-        fs.readdirSync(modPath).forEach(ver => {
-          const jar = path.join(modPath, ver, `${mod}-${ver}.jar`);
-          if (fs.existsSync(jar)) jars.push(jar);
-        });
-      }
-    });
-  }
-
-  const asmDir = path.join(libraryDir, "org", "ow2", "asm");
-  if (fs.existsSync(asmDir)) {
-    fs.readdirSync(asmDir).forEach(pkg => {
-      const pkgPath = path.join(asmDir, pkg);
-      if (fs.statSync(pkgPath).isDirectory()) {
-        fs.readdirSync(pkgPath).forEach(ver => {
-          const jar = path.join(pkgPath, ver, `${pkg}-${ver}.jar`);
-          if (fs.existsSync(jar)) jars.push(jar);
-        });
-      }
-    });
-  }
-
-  const jarSet = new Set<string>();
-  return jars.map(j => path.resolve(j)).filter(j => !jarSet.has(j) && jarSet.add(j));
-}
-
 function getJavaVersion(javaPath: string) {
   try {
     const output = child.execSync(`${javaPath} -version 2>&1`).toString();
@@ -188,7 +129,25 @@ function getJavaVersion(javaPath: string) {
     throw new Error("[Minecraft-Core] No se pudo detectar la versión de Java instalada.");
   }
 }
+function filterDuplicateASM(paths: string[]): string[] {
+  const latest: Record<string, string> = {};
+  const asmRegex = /asm-(\d+\.\d+)\.jar$/i;
 
+  for (const p of paths) {
+    const match = p.match(asmRegex);
+    if (!match) continue;
+    const ver = match[1] || "";
+    if (!latest["asm"] || latest["asm"] < ver) {
+      latest["asm"] = ver || "";
+    }
+  }
+
+  return paths.filter(p => {
+    const match = p.match(asmRegex);
+    if (!match) return true;
+    return match[1] === latest["asm"];
+  });
+}
 function filterLwjglDuplicates(paths: string[]): string[] {
   const latest: Record<string, string> = {};
 
@@ -276,34 +235,56 @@ export const ArgumentBuilder = {
       version.type?.toLowerCase() === "neoforge";
 
     if (isNeoForge) {
-      const neoForgeJars = getNeoForgeJars(path.join(opts.root, "libraries"));
-      
-      // Separar módulos y classpath
-      const { modulePath, classPathFiltered } = splitModuleAndClassPath(neoForgeJars);
+      const cpManager = new ClasspathManager(opts.root, actualVersion);
+      const cpResult = cpManager.buildClasspath();
 
-      args.push(
-        "-p", modulePath.join(path.delimiter),
-        "--add-modules", "ALL-MODULE-PATH",
-        "--add-opens", "java.base/java.lang=ALL-UNNAMED",
-        "--add-opens", "java.base/java.util=ALL-UNNAMED",
-        "--add-opens", "java.base/java.lang.invoke=ALL-UNNAMED"
-      );
-
-      if (classPathFiltered.length) {
-        args.push("-cp", classPathFiltered.join(path.delimiter));
+      if (opts.debug) {
+        console.log("[Minecraft-Core] Classpath:", cpResult.classpath?.length || 0);
+        console.log("[Minecraft-Core] ModulePath:", cpResult.modulePath?.length || 0);
       }
 
-      args.push("cpw.mods.bootstraplauncher.BootstrapLauncher");
-    } else {
-      // Vanilla/Fabric
-      const filteredClassPath = filterLwjglDuplicates(uniquePaths(classPathArray));
-      if (!filteredClassPath.length)
-        throw new Error("[Minecraft-Core] classPath vacío o inválido");
+      // juntar TODO el classpath en bruto
+      const fullCp = [...(cpResult.classpath || []), ...(cpResult.modulePath || [])];
 
-      if (debug) console.log("[Minecraft-Core] classpath count:", filteredClassPath.length);
+      // buscar bootstrap
+      const bootstrapJar = fullCp.find(j => j.includes("bootstraplauncher"));
+      if (!bootstrapJar) throw new Error("[Minecraft-Core] BootstrapLauncher no encontrado!");
+
+      // aplicar filtros
+      let finalClasspath = uniquePaths(fullCp);
+      finalClasspath = filterLwjglDuplicates(finalClasspath);
+      finalClasspath = filterDuplicateASM(finalClasspath);
+
+      if (opts.debug) console.log("[Minecraft-Core] Classpath final:", finalClasspath.length);
+
+      // meter args
+      args.push("-cp", finalClasspath.join(path.delimiter), "cpw.mods.bootstraplauncher.BootstrapLauncher");
+
+      // module-path separado (sin bootstrap)
+      const moduleOnly = (cpResult.modulePath || []).filter(j => !j.includes("bootstraplauncher"));
+      if (moduleOnly.length) {
+        args.push(
+          "-p", moduleOnly.join(path.delimiter),
+          "--add-modules", "ALL-MODULE-PATH",
+          "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+          "--add-opens", "java.base/java.util=ALL-UNNAMED",
+          "--add-opens", "java.base/java.lang.invoke=ALL-UNNAMED"
+        );
+      }
+    } else {
+      // Vanilla / Forge
+      let filteredClassPath = filterLwjglDuplicates(uniquePaths(classPathArray));
+      filteredClassPath = filterDuplicateASM(filteredClassPath);
+
+      if (!filteredClassPath.length) throw new Error("[Minecraft-Core] classPath vacío o inválido");
+
+      if (opts.debug) {
+        console.log("[Minecraft-Core] classpath count:", filteredClassPath.length);
+      }
 
       args.push("-cp", filteredClassPath.join(path.delimiter));
     }
+
 
     // Main class
     const mainClass = version.mainClass || (isNeoForge ? "cpw.mods.bootstraplauncher.BootstrapLauncher" : "net.minecraft.client.main.Main");

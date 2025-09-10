@@ -15,6 +15,7 @@ import { MinecraftClientDownloader } from "./Minecraft/Version";
 import { MinecraftAssetsDownloader } from "./Minecraft/Assets";
 import { LwjglDownloader } from "./Minecraft/Lwjgl";
 import { downloadLoggingXml } from "./Minecraft/Logging";
+import { getFileHash } from "./Utils/Index";
 import RuntimeDownloader from "./Minecraft/Runtime";
 import MinecraftBundle, { BundleItem } from "./Minecraft/Bundle";
 
@@ -27,6 +28,7 @@ interface DownloaderOptions {
   concurrency?: number | false | undefined;
   installJava?: JavaOption | undefined;
   variantJava?: "release" | "snapshot" | "alpha" | "beta" | undefined;
+  bundleEnabled?: boolean;
   bundle?: BundleItem[] | undefined;
 }
 
@@ -68,7 +70,7 @@ export class MinecraftDownloader extends EventEmitter {
   }
 
   public async start(options: DownloaderOptions) {
-    const { root, version, concurrency = 2, installJava = true, bundle } = options;
+    const { root, version, concurrency = 1, installJava = true, bundle, bundleEnabled = true } = options;
 
     if (!root) throw new Error("Debe especificar la carpeta raíz (root).");
     if (!version) throw new Error("Debe especificar la versión de Minecraft.");
@@ -79,16 +81,6 @@ export class MinecraftDownloader extends EventEmitter {
 
     this.ensureLauncherProfiles(root);
     this.tasks.push(() => this.downloadLoggingXml(root, version));
-
-    if (bundle?.length) {
-      this.tasks.push(async () => {
-        const bundleManager = new MinecraftBundle({ path: root, ignored: [] });
-        await bundleManager.checkBundle(bundle);
-        await bundleManager.checkFiles(bundle);
-        this.completedSteps++;
-        this.emitProgress("Bundle procesado", 100);
-      });
-    }
 
     // Detectar legacy assets
     const versionStr = typeof version === "string" ? version : version.id;
@@ -109,6 +101,44 @@ export class MinecraftDownloader extends EventEmitter {
       ],
       ["Cliente", MinecraftClientDownloader],
     ];
+
+    if (bundle?.length && bundleEnabled) {
+      downloaders.push([
+        "Bundle",
+        class BundleDownloader extends EventEmitter {
+          private root: string;
+          private bundleList: BundleItem[];
+
+          constructor(rootPath: string, bundleItems: BundleItem[]) {
+            super();
+            this.root = rootPath;
+            this.bundleList = bundleItems;
+          }
+
+          public async start() {
+            const bundleManager = new MinecraftBundle({ path: this.root, ignored: [] });
+
+            bundleManager.on("progress", (data: { filePath: string; index: number; total: number }) => {
+              const stepPercent = ((data.index + 1) / data.total) * 100;
+              this.emit("progress", {
+                current: data.filePath,
+                stepPercent,
+              });
+            });
+
+            const toDownload = await bundleManager.checkBundle(this.bundleList);
+
+            if (toDownload.length > 0) {
+              this.emit("warn", `Archivos corruptos o faltantes: ${toDownload.map(f => f.path).join(", ")}`);
+            }
+
+            await bundleManager.checkFiles(this.bundleList);
+
+            this.emit("done");
+          }
+        }.bind(null, root, bundle),
+      ]);
+    }
 
     if (installJava !== false) {
       let javaVersion: string;
@@ -148,7 +178,7 @@ export class MinecraftDownloader extends EventEmitter {
 
       if (!this.controller.signal.aborted) {
         this.emitProgress("Descarga completada", 100);
-        this.emit("done");
+        this.emit("done","¡Descarga Exitosa!");
       }
     } catch (err: any) {
       this.emit("error", err);
@@ -254,21 +284,44 @@ export class MinecraftDownloader extends EventEmitter {
       );
 
       instance.on("progress", (progress: any) => {
-        const stepPercent = typeof progress === "number" ? progress : progress.stepPercent ?? 0;
-        this.emitProgress(name, stepPercent);
+        let stepPercent = 0;
+        if (typeof progress === "number") stepPercent = progress;
+        else if (progress.current != null && progress.total != null && progress.total > 0)
+          stepPercent = (progress.current / progress.total) * 100;
+        else if (progress.percent != null) stepPercent = progress.percent;
+
+        const overallPercent =
+          ((this.completedSteps + stepPercent / 100) / this.totalSteps) * 100;
+
+        this.emit("progress", {
+          current: `${name} | ${progress.current}/${progress.total || ""}`,
+          stepPercent: Number(stepPercent.toFixed(2)),
+          totalPercent: Number(overallPercent.toFixed(2)),
+        });
       });
 
-      instance.on("done", () => {
+      const finalize = async () => {
         this.completedSteps++;
         this.emitStepDone(name);
         this.emitProgress(`${name} completado`, 100);
+        try {
+          await this.verifyDownloaderIntegrity(name, instance);
+        } catch (err) {
+          this.emit("warn", `[${name}] Error verificando integridad: ${err}`);
+        }
         resolve();
-      });
+      };
 
-      if (typeof instance.start === "function") instance.start().catch((err: any) => reject(err));
-      else process.nextTick(() => instance.emit("done"));
+      if (typeof instance.start === "function") {
+        instance.start()
+          .then(finalize)
+          .catch(reject);
+      } else {
+        process.nextTick(finalize);
+      }
     });
   }
+
 
   private emitStepDone(name: string) {
     this.emit("step-done", name);
@@ -328,10 +381,47 @@ ${err.stack}
       this.emit("info", "launcher_profiles.json creado de forma básica");
     }
   }
+  private async verifyDownloaderIntegrity(name: string, instance: any) {
+    if (typeof instance.getBundle === 'function') {
+      const bundle: BundleItem[] = await instance.getBundle();
+      const failedFiles: BundleItem[] = [];
+
+      for (const file of bundle) {
+        if (!fs.existsSync(file.path)) {
+          failedFiles.push(file);
+          continue;
+        }
+        if (file.sha1) {
+          const hash = await getFileHash(file.path);
+          if (hash !== file.sha1) failedFiles.push(file);
+        }
+        if (file.size) {
+          const stats = fs.statSync(file.path);
+          if (stats.size !== file.size) failedFiles.push(file);
+        }
+      }
+
+      if (failedFiles.length > 0) {
+        this.emit("warn", `[${name}] Archivos corruptos o incompletos detectados: ${failedFiles.map(f => f.path).join(", ")}`);
+        // Aquí podrías decidir: re-descargar automáticamente
+      } else {
+        this.emit("info", `[${name}] Integridad verificada correctamente.`);
+      }
+    }
+  }
 
   private emitProgress(current: string, stepPercent: number) {
     const formattedStep = (stepPercent ?? 0).toFixed(2);
-    const totalPercent = ((this.completedSteps / this.totalSteps) * 100).toFixed(2);
-    this.emit("progress", { current, stepPercent: Number(formattedStep), totalPercent: Number(totalPercent) });
+
+    const totalPercent = (
+      (this.completedSteps / this.totalSteps) +
+      (stepPercent / 100 / this.totalSteps)
+    ) * 100;
+
+    this.emit("progress", {
+      current,
+      stepPercent: Number(formattedStep),
+      totalPercent: Number(totalPercent.toFixed(2)),
+    });
   }
 }

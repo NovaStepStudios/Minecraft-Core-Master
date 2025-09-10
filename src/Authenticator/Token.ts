@@ -3,8 +3,8 @@ import crypto from 'crypto';
 import path from 'path';
 
 const TOKEN_FILE = path.resolve(__dirname, 'ms_token.enc');
-const SECRET_KEY = crypto.createHash('sha256').update('Minecraft-Core-Master SecretKey').digest(); // 32 bytes para AES-256
-const IV_LENGTH = 16; // AES CBC IV length
+const SECRET_KEY = crypto.createHash('sha256').update('Minecraft-Core-Master SecretKey').digest();
+const IV_LENGTH = 16;
 
 export interface MicrosoftToken {
   access_token: string;
@@ -23,7 +23,6 @@ export class TokenManager {
         this.loadToken();
     }
 
-    // --- Cifrar ---
     private encrypt(data: string): string {
         const iv = crypto.randomBytes(IV_LENGTH);
         const cipher = crypto.createCipheriv('aes-256-cbc', SECRET_KEY, iv);
@@ -31,7 +30,6 @@ export class TokenManager {
         return iv.toString('hex') + ':' + encrypted;
     }
 
-    // --- Descifrar ---
     private decrypt(data: string): string {
         const [ivHex, encryptedHex] = data.split(':');
         if (!ivHex || !encryptedHex) throw new Error('Token corrupto o inválido');
@@ -42,13 +40,11 @@ export class TokenManager {
         return decrypted;
     }
 
-    // --- Guardar en archivo ---
     private saveToken() {
         if (!this.token) return;
         fs.writeFileSync(TOKEN_FILE, this.encrypt(JSON.stringify(this.token)), 'utf8');
     }
 
-    // --- Cargar desde archivo ---
     private loadToken() {
         if (!fs.existsSync(TOKEN_FILE)) return;
         try {
@@ -60,24 +56,19 @@ export class TokenManager {
         }
     }
 
-    // --- Login manual (guardar token luego de Microsoft login) ---
     public login(tokenData: MicrosoftToken) {
         this.token = tokenData;
         this.token.obtained_at = Math.floor(Date.now() / 1000);
         this.saveToken();
     }
 
-    // --- Logout (eliminar token) ---
     public logout() {
         this.token = null;
         if (fs.existsSync(TOKEN_FILE)) fs.unlinkSync(TOKEN_FILE);
     }
 
-    // --- Obtener token actual ---
     public getToken(): MicrosoftToken | null {
         if (!this.token) return null;
-
-        // Verificar si expiro (10s de margen)
         const now = Math.floor(Date.now() / 1000);
         if (now > this.token.obtained_at + this.token.expires_in - 10) {
         console.warn('El token ha expirado, se debe refrescar.');
@@ -87,7 +78,6 @@ export class TokenManager {
         return this.token;
     }
 
-    // --- Actualizar token (refresh_token) ---
     public refresh(newTokenData: Partial<MicrosoftToken>) {
         if (!this.token) return;
         this.token = { ...this.token, ...newTokenData, obtained_at: Math.floor(Date.now() / 1000) };

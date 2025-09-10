@@ -1,7 +1,7 @@
 const { MinecraftLauncher, Mojang } = require('../../dist/index');
 
 (async()=>{
-  const user = await Mojang.login("Stepnicka012"); // user ahora tiene el objeto devuelto
+  const user = await Mojang.login("SantiagoStepnicka"); // user ahora tiene el objeto devuelto
   console.log(user); // Para debug
   /**
    Mojang.login("Stepnicka012") => {
@@ -16,11 +16,8 @@ const { MinecraftLauncher, Mojang } = require('../../dist/index');
 
   // Configuración del launcher
   const launcherOptions = {
-    version: 'quilt-loader-0.29.1-1.21.8',                // Cambia por la versión que tengas
+    version: 'neoforge-21.4.152',                // Cambia por la versión que tengas
     root: './.minecraft',                                   // Carpeta donde está tu .minecraft
-    javaPath: "C:/Program Files/Java/jdk-21/bin/javaw.exe",
-    // jvmArgs: [], // Argumentos de JVM *Java* [ Opcional ]
-    // mcArgs:[], // Argumentos de Minecraft [ Opcional ]
     debug: true,
     memory:{
       min: "512M",

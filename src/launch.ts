@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import { EventEmitter } from "events";
+import prompt from "prompt";
 import { VersionHandler, VersionJSON } from "./Minecraft/Handler/Version";
 import { ArgumentBuilder, Version } from "./Minecraft/Handler/Arguments";
 import { ClasspathManager } from "./Minecraft/Handler/Classpath";
@@ -9,7 +10,7 @@ import { ClasspathManager } from "./Minecraft/Handler/Classpath";
 export interface LauncherOptions {
   version: string;
   root: string;
-  javaPath: string;
+  javaPath?: string;
   jvmArgs?: string[];
   mcArgs?: string[];
   debug?: boolean;
@@ -23,6 +24,45 @@ export interface LauncherOptions {
     client_token?: string;
   };
   window?: { width?: number; height?: number; fullscreen?: boolean };
+}
+
+function resolveJavaPath(customPath?: string): string | null {
+  const candidates: string[] = [];
+
+  if (customPath) candidates.push(path.normalize(customPath));
+
+  if (process.env.JAVA_HOME) {
+    candidates.push(path.join(process.env.JAVA_HOME, "bin", "java"));
+  }
+
+  try {
+    const found = process.platform === "win32"
+      ? execSync("where java").toString().split(/\r?\n/)[0]?.trim()
+      : execSync("which java").toString()?.trim();
+    if (found) candidates.push(path.normalize(found));
+  } catch {}
+
+  if (process.platform === "win32") {
+    candidates.push(
+      "C:\\Program Files\\Java\\bin\\java.exe",
+      "C:\\Program Files (x86)\\Java\\bin\\java.exe"
+    );
+  } else if (process.platform === "darwin") {
+    candidates.push("/Library/Java/JavaVirtualMachines/jdk-latest/Contents/Home/bin/java");
+  } else {
+    candidates.push(
+      "/usr/bin/java",
+      "/usr/local/bin/java",
+      "/usr/lib/jvm/java-21-openjdk/bin/java",
+      "/usr/lib/jvm/java-17-openjdk/bin/java"
+    );
+  }
+
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) return path.normalize(c);
+  }
+
+  return null;
 }
 
 export class MinecraftLauncher extends EventEmitter {
@@ -45,15 +85,34 @@ export class MinecraftLauncher extends EventEmitter {
     delete this.timers[label];
   }
 
+  private async getJavaPath(): Promise<string> {
+    let javaExec = resolveJavaPath(this.options.javaPath);
+
+    if (!javaExec) {
+      this.emit("warn", "No se encontró Java automáticamente. Solicitando al usuario...");
+      prompt.start();
+
+      const { manualJava } = await prompt.get({
+        name: "manualJava",
+        description: "Ruta del ejecutable de Java",
+        required: true
+      });
+
+      if (typeof manualJava === "string" && fs.existsSync(manualJava)) {
+        javaExec = path.normalize(manualJava);
+      } else {
+        throw new Error("La ruta de Java ingresada no es válida.");
+      }
+    }
+
+    return javaExec;
+  }
+
   async launch(): Promise<void> {
-    const { root, version, javaPath, authenticator, debug, memory, jvmArgs = [], mcArgs = [] } = this.options;
+    const { root, version, authenticator, debug, memory, jvmArgs = [], mcArgs = [] } = this.options;
 
     try {
-      if (!fs.existsSync(javaPath)) {
-        const msg = `No se encontró el ejecutable de Java en: ${javaPath}`;
-        this.emit("error", msg);
-        throw new Error(msg);
-      }
+      const javaPath = await this.getJavaPath();
 
       this.emit("debug", `Cargando versión: ${version}`);
       this.startTimer("Carga de versión");
@@ -61,11 +120,10 @@ export class MinecraftLauncher extends EventEmitter {
       const versionHandler = new VersionHandler(root);
       const versionData = versionHandler.loadVersion(version);
 
-      // versionSafe: Todos los valores obligatorios con fallback
       const versionSafe: VersionJSON & { inheritsFrom?: string; libraries: any[] } = {
         id: versionData.id,
         type: versionData.type || "release",
-        mainClass: versionData.mainClass || "net.minecraft.client.main.Main",
+        mainClass: versionData.mainClass ?? "net.minecraft.client.main.Main",
         assets: versionData.assets || "legacy",
         assetIndex: versionData.assetIndex || { id: "legacy", url: "" },
         minecraftArguments: versionData.minecraftArguments || "",
@@ -143,42 +201,4 @@ export class MinecraftLauncher extends EventEmitter {
       throw err;
     }
   }
-  async launchInstancie(rootBase: string, instancieName: string): Promise<void> {
-    try {
-      const instancePath = path.join(rootBase, "instancies", instancieName);
-      const manifestPath = path.join(instancePath, "Manifest-Instancie.json");
-
-      if (!fs.existsSync(manifestPath)) {
-        throw new Error(`No existe Manifest-Instancie.json en la instancia: ${instancePath}`);
-      }
-
-      const instance = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-
-      this.options = {
-        version: instance.version || "",
-        root: instancePath,
-        javaPath: instance.gameConfig?.javaPath || this.options.javaPath,
-        jvmArgs: instance.gameConfig?.javaArgs || [],
-        mcArgs: instance.gameConfig?.gameArgs || [],
-        debug: this.options.debug ?? false,
-        memory: instance.gameConfig?.memory || { min: "512M", max: "2G" },
-        authenticator: instance.userConfig?.authenticator,
-        window: {
-          width: instance.gameConfig?.resolution?.width
-            ? Number(instance.gameConfig.resolution.width)
-            : 854,
-          height: instance.gameConfig?.resolution?.height
-            ? Number(instance.gameConfig.resolution.height)
-            : 480,
-          fullscreen: instance.gameConfig?.resolution?.fullscreen || false,
-        },
-      };
-
-      await this.launch();
-    } catch (err) {
-      this.emit("error", err instanceof Error ? err.message : String(err));
-      throw err;
-    }
-  }
-
 }

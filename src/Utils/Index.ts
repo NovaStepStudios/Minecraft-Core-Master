@@ -62,6 +62,7 @@ export function loader(type: string) {
     fabric: { 
       meta: 'https://meta.fabricmc.net/v2/versions',
       data: 'https://meta.legacyfabric.net/v2/versions/loader',
+      installer: 'https://meta.fabricmc.net/v2/versions/loader/${game_version}/${loader_version}/installer/${installer_version}/fabric-installer.jar',
       json: 'https://meta.fabricmc.net/v2/versions/loader/${version}/${build}/profile/json'
     },
     legacyfabric: {

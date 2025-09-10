@@ -19,14 +19,12 @@ export interface Library {
         classifiers?: Record<string, { path: string; url?: string; sha1?: string; size?: number }>;
     };
 }
+
 export interface VersionArguments {
     game: (string | { rules: any[]; value: string | string[] })[];
     jvm: (string | { rules: any[]; value: string | string[] })[];
 }
-export interface Version extends VersionJSON {
-    inheritsFrom?: string;
-    libraries: any[];
-}
+
 export interface VersionJSON {
     id: string;
     inheritsFrom?: string | undefined;
@@ -37,33 +35,40 @@ export interface VersionJSON {
     arguments?: VersionArguments | undefined;
     minecraftArguments?: string | undefined;
     libraries?: Library[] | undefined;
-    assetIndex?: { id: string; url: string } | undefined;
+    assetIndex?: { id: string; url: string; } | undefined;
     assets?: string | undefined;
-    javaVersion?: { majorVersion: number; component?: string } | undefined;
+    javaVersion?: { majorVersion: number; component?: string; } | undefined;
     logging?: any;
 }
 
 export class VersionHandler {
     private root: string;
     private versionsRoot: string;
+
     constructor(minecraftRoot: string) {
         this.root = minecraftRoot;
         this.versionsRoot = path.join(this.root, "versions");
     }
+
     loadVersion(versionId: string): VersionJSON {
         const versionPath = path.join(this.versionsRoot, versionId, `${versionId}.json`);
         if (!fs.existsSync(versionPath)) {
             throw new Error(`[VersionHandler] No existe JSON para la versión: ${versionId}`);
         }
+
         let versionData: VersionJSON = JSON.parse(fs.readFileSync(versionPath, "utf-8"));
+
         if (versionData.inheritsFrom) {
             const parent = this.loadVersion(versionData.inheritsFrom);
             versionData = this.mergeVersions(parent, versionData);
-            versionData.libraries = this.cleanLibraries(versionData.libraries ?? []);
         }
+
+        versionData.libraries = this.cleanLibraries(versionData.libraries ?? []);
         versionData.arguments = this.normalizeArguments(versionData);
+
         return versionData;
     }
+
     getLaunchData(versionId: string, gameDir?: string, assetsDir?: string) {
         const version = this.loadVersion(versionId);
         const rootDir = this.root;
@@ -84,10 +89,13 @@ export class VersionHandler {
             jvm: version.arguments?.jvm ?? []
         };
 
+        // Resolver librerías cpw y forge recursivamente
+        const cpwJars = this.resolveCpwLibs(version);
+
         return {
             mainClass: version.mainClass ?? "",
             javaVersion: version.javaVersion,
-            libraries: version.libraries ?? [],
+            libraries: [...(version.libraries ?? []), ...cpwJars.map(j => ({ downloads: { artifact: { path: j } } }))],
             arguments: replacedArgs,
             assetIndex: version.assetIndex,
             gameDir: gameDirectory,
@@ -95,6 +103,7 @@ export class VersionHandler {
             rootDir
         };
     }
+
     private mergeVersions(base: VersionJSON, override: VersionJSON): VersionJSON {
         const merged: VersionJSON = {
             ...base,
@@ -105,12 +114,14 @@ export class VersionHandler {
         merged.arguments = this.mergeArguments(base.arguments, override.arguments);
         return merged;
     }
+
     private mergeArguments(base?: VersionArguments, override?: VersionArguments): VersionArguments {
         return {
             game: [...(base?.game ?? []), ...(override?.game ?? [])],
             jvm: [...(base?.jvm ?? []), ...(override?.jvm ?? [])]
         };
     }
+
     private normalizeArguments(version: VersionJSON): VersionArguments {
         if (version.arguments) {
             return {
@@ -123,6 +134,7 @@ export class VersionHandler {
         }
         return { game: [], jvm: [] };
     }
+
     private cleanLibraries(libs: Library[]): Library[] {
         const seen = new Map<string, Library>();
         for (const lib of libs) {
@@ -141,5 +153,25 @@ export class VersionHandler {
             }
         }
         return Array.from(seen.values());
+    }
+
+    private resolveCpwLibs(version: VersionJSON): string[] {
+        const cpwLibs: string[] = [];
+
+        const gather = (v: VersionJSON) => {
+            for (const lib of v.libraries ?? []) {
+                if (lib.name.includes("cpw") || lib.name.includes("forge") || lib.name.includes("mixin")) {
+                    if (lib.downloads?.artifact) {
+                        cpwLibs.push(path.join(this.root, "libraries", lib.downloads.artifact.path));
+                    }
+                }
+            }
+            if (v.inheritsFrom) {
+                gather(this.loadVersion(v.inheritsFrom));
+            }
+        };
+
+        gather(version);
+        return cpwLibs;
     }
 }

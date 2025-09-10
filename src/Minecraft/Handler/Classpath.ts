@@ -2,7 +2,9 @@
  * @author NovaStepStudios
  * @alias StepnickaSantiago
  * @license Apache-2.0
+ * @link https://www.apache.org/licenses/LICENSE-2.0
  */
+
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -20,7 +22,8 @@ export interface Library {
 export interface VersionJSON {
     id: string;
     inheritsFrom?: string;
-    libraries: Library[];
+    libraries?: Library[];
+    mainClass?: string | undefined;
 }
 
 export interface ClasspathResult {
@@ -139,6 +142,7 @@ export class ClasspathManager {
             else if (isNeoForge && lib.name?.includes("neoforge") && p.includes("universal")) universal = p;
         }
 
+        // LaunchWrapper
         if (needsLaunchWrapper) {
             if (!launchWrapper) {
                 const lwVer = this.version.id.startsWith("1.7") ? "1.5" : "1.12";
@@ -147,10 +151,26 @@ export class ClasspathManager {
             push(launchWrapper);
         }
 
-        // Jars de versión
+        // Boostrap según mainClass
+        const mainClass: string = this.version.mainClass || "";
+        const needsBootstrap = /bootstrap/i.test(mainClass);
+
+        if (needsBootstrap && !bootstrap) {
+            for (const lib of libs) {
+                if (!lib.name?.includes("bootstraplauncher")) continue;
+                const p = this.resolveLibPath(lib);
+                if (p) {
+                    push(p);
+                    bootstrap = p;
+                    break;
+                }
+            }
+        }
+
+        // JARs de versión
         if (this.version.inheritsFrom) push(path.join(this.root, "versions", this.version.inheritsFrom, `${this.version.inheritsFrom}.jar`));
         const versionJar = path.join(this.root, "versions", this.version.id, `${this.version.id}.jar`);
-        if (isOptiFine) push(versionJar);
+        push(versionJar);
         push(bootstrap);
         push(universal);
 
@@ -158,14 +178,14 @@ export class ClasspathManager {
         for (const lib of libs) {
             const p = this.resolveLibPath(lib);
             if (!p) continue;
+            // Saltar LaunchWrapper, Bootstrap y universal ya agregados
             if ((needsLaunchWrapper && lib.name?.includes("launchwrapper")) || lib.name?.includes("bootstraplauncher") || (isNeoForge && lib.name?.includes("neoforge") && p.includes("universal"))) continue;
-            // Si es NeoForge y es ASM, va a modulePath
+            // ASM de NeoForge va a modulePath
             if (isNeoForge && /org[\\/]ow2[\\/]asm[\\/]/.test(p.replace(/\\/g, "/"))) push(p, true);
             else push(p);
         }
 
-        if (!isOptiFine) push(versionJar);
-
+        // Agregar ASM faltante si es necesario
         this.addASMIfMissing(isNeoForge ? modulePath : classpath, seen);
 
         // Directorio de natives

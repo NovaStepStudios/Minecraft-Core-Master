@@ -53,7 +53,6 @@ interface OAuth2Response {
     [key: string]: any;
 }
 
-// --- Convertir imagen a base64
 async function getBase64(url: string): Promise<string> {
     const res = await fetch(url);
     const arrayBuffer = await res.arrayBuffer();
@@ -74,7 +73,6 @@ export default class Microsoft {
         else this.type = 'terminal';
     }
 
-    /** Login manual */
     public async getAuth(type?: MicrosoftClientType, url?: string): Promise<AuthResponse | AuthError | false> {
         const finalType = type || this.type;
         const finalUrl =
@@ -109,7 +107,6 @@ export default class Microsoft {
         return this.exchangeCodeForToken(userCode);
     }
 
-    /** Auto login usando token guardado */
     public async autoLogin(): Promise<AuthResponse | AuthError | false> {
         const token = this.tokenManager.getToken();
         if (!token) return this.getAuth();
@@ -130,24 +127,20 @@ export default class Microsoft {
         };
     }
 
-    /** Logout */
     public logout() {
         this.tokenManager.logout();
     }
 
-    /** Obtener perfil de Minecraft */
     public async getProfile(mcLogin: { access_token: string }): Promise<MinecraftProfile | AuthError> {
         try {
             const res = await fetch('https://api.minecraftservices.com/minecraft/profile', {
                 headers: { Authorization: `Bearer ${mcLogin.access_token}` }
             });
 
-            // Primero tomamos como any
             const data: any = await res.json();
 
             if (data.error) return { error: data.error };
 
-            // Validar existencia de campos esenciales
             if (!data.id || !data.name) {
                 return { error: 'Perfil inválido o incompleto' };
             }
@@ -158,7 +151,6 @@ export default class Microsoft {
             for (const s of skins) if (s.url) s.base64 = `data:image/png;base64,${await getBase64(s.url)}`;
             for (const c of capes) if (c.url) c.base64 = `data:image/png;base64,${await getBase64(c.url)}`;
 
-            // Retornamos con tipado correcto
             const profile: MinecraftProfile = {
                 id: data.id,
                 name: data.name,
@@ -172,7 +164,6 @@ export default class Microsoft {
         }
     }
 
-    /** Intercambiar código de autorización por token y obtener Minecraft token real */
     private async exchangeCodeForToken(code: string): Promise<AuthResponse | AuthError> {
         try {
             const res = await fetch('https://login.live.com/oauth20_token.srf', {
@@ -189,10 +180,8 @@ export default class Microsoft {
         }
     }
 
-    /** Flujo completo para obtener Minecraft token real y perfil */
     private async getMinecraftAccount(oauth2: OAuth2Response): Promise<AuthResponse | AuthError> {
         try {
-            // 1️⃣ Xbox Live Authentication
             const xbl = await this.fetchJSON('https://user.auth.xboxlive.com/user/authenticate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -204,7 +193,6 @@ export default class Microsoft {
             });
             if (xbl.error) return { ...xbl, errorType: 'xbl' };
 
-            // 2️⃣ XSTS Authorization
             const xsts = await this.fetchJSON('https://xsts.auth.xboxlive.com/xsts/authorize', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -216,7 +204,6 @@ export default class Microsoft {
             });
             if (xsts.error) return { ...xsts, errorType: 'xsts' };
 
-            // 3️⃣ Minecraft login
             const mcLogin = await this.fetchJSON('https://api.minecraftservices.com/authentication/login_with_xbox', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -224,11 +211,9 @@ export default class Microsoft {
             });
             if (mcLogin.error) return { ...mcLogin, errorType: 'mcLogin' };
 
-            // 4️⃣ Perfil de Minecraft
             const profile = await this.getProfile({ access_token: mcLogin.access_token });
             if ('error' in profile) return { ...profile, errorType: 'profile' };
 
-            // 5️⃣ Guardar token en TokenManager
             const now = Math.floor(Date.now() / 1000);
             const token: MicrosoftToken = {
                 access_token: mcLogin.access_token,
@@ -261,7 +246,6 @@ export default class Microsoft {
         }
     }
 
-    /** Helper fetch + parse JSON */
     private async fetchJSON(url: string, options: any): Promise<any> {
         try {
             const res = await fetch(url, options);

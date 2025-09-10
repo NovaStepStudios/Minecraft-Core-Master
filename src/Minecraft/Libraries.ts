@@ -49,32 +49,46 @@ export class MinecraftLibrariesDownloader extends EventEmitter {
   }
   public async start(): Promise<void> {
     await this.#ensureDir(this.#libsDir);
+
     const manifest = await this.#fetchJSON<any>("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json");
     const versionMeta = manifest.versions.find((v: any) => v.id === this.#version);
     if (!versionMeta) throw new Error(`[Downloader] Versión ${this.#version} no encontrada.`);
+
     const versionJSON = await this.#fetchJSON<any>(versionMeta.url);
     const libraries: Library[] = versionJSON.libraries || [];
     const filtered = libraries.filter(lib => this.#matchesRules(lib.rules));
+
     const officialLibs: LibraryArtifact[] = filtered
       .map(lib => lib.downloads?.artifact)
       .filter((a): a is LibraryArtifact => !!a && !!a.url && !!a.path);
+
     const extraLibs: LibraryArtifact[] = await this.#loadExtraLibs();
     const allLibs = [...officialLibs, ...extraLibs];
-    let downloaded = 0;
-    await this.#runConcurrent(allLibs, this.#concurrency, async lib => {
+
+    let completed = 0;
+
+    const downloadWorker = async (lib: LibraryArtifact) => {
       const fullPath = path.join(this.#libsDir, lib.path);
       const needsDownload =
         !fs.existsSync(fullPath) ||
         (lib.sha1 && !(await this.#verifySHA1(fullPath, lib.sha1)));
 
       if (needsDownload) {
-        await this.#downloadFileWithRetries(lib.url, fullPath, lib.sha1);
+        try {
+          await this.#downloadFileWithRetries(lib.url, fullPath, lib.sha1);
+        } catch (err: any) {
+          this.emit("warn", `[Library] Falló descarga: ${lib.path} -> ${err.message}`);
+        }
       }
-      downloaded++;
-      this.#emitProgress(downloaded, allLibs.length);
-    });
-    this.emit("done", { current: downloaded, total: allLibs.length });
+
+      completed++;
+      this.#emitProgress(completed, allLibs.length);
+    };
+
+    await this.#runConcurrent(allLibs, this.#concurrency, downloadWorker);
+    this.emit("done", { current: completed, total: allLibs.length });
   }
+
   #mapOS(platform: string) {
     switch (platform) {
       case "win32": return "windows";

@@ -321,7 +321,7 @@ const { MinecraftLauncher, Mojang } = require('minecraft-core-master');
   const launcherOptions = {
     version: '1.21.5',                // Versión de Minecraft [ Selecciona automaticamente el tipo de version ]
     root: './.minecraft',             // Carpeta raíz
-    javaPath: 'C:/Program Files/Java/jdk-21/bin/javaw.exe',
+    javaPath: 'C:/Program Files/Java/jdk-21/bin/javaw.exe', // Opcional [ Resuelve ruta por si solo si no encuentra Java pedira al usuario que inserte un path ]
     
     jvmArgs: [],   // Argumentos JVM opcionales
     mcArgs: [],    // Argumentos del cliente opcionales
@@ -829,6 +829,67 @@ main();
 * `done()` → Modpack instalado exitosamente.
 * `fileInfo({ fileName, required })` → Información de cada mod descargado.
 
+
+---
+
+<p align="center">
+  <img align="center" width="500px" src="./docs/ComponentsTittle/CLIpng.png">
+  <h1>CLI | Mc-Core</h1>
+</p>
+
+MC-CORE es un CLI para descargar y lanzar Minecraft usando los módulos `MinecraftDownloader` y `MinecraftLauncher`.
+
+Comandos disponibles:
+
+1. **download**
+
+   Sintaxis:
+   `mc-core download <version> <dir> [concurrency]`
+
+   * version: Versión de Minecraft a descargar (ej: 1.12.2)
+   * dir: Directorio donde se instalará Minecraft (ej: .minecraft)
+   * concurrency (opcional): Número de descargas simultáneas (por defecto: 1)
+
+   Ejemplo:
+
+   ```
+   mc-core download 1.19.2 ./minecraft 5
+   ```
+
+   Salida esperada:
+
+   ```
+   [ PROGRESS ] { current: 'Assets | 1305/1305', stepPercent: 100, totalPercent: 80 }
+   [ DEBUG ] Assets
+   [ PROGRESS ] { current: 'Cliente | 3/3', stepPercent: 100, totalPercent: 100 }
+   [ DONE ] Descarga completada
+   Minecraft Se a Descargado Exitosamente : Dir. ./minecraft, Vers. 1.19.2
+   ```
+
+2. **launch**
+
+   Sintaxis:
+   `mc-core launch <version> <dir> [debug] [memoryMax] [memoryMin]`
+
+   * version: Versión de Minecraft a lanzar (ej: 1.12.2)
+   * dir: Directorio de instalación de Minecraft (ej: .minecraft)
+   * debug (opcional): true para activar logs detallados (por defecto: false)
+   * memoryMax (opcional): Memoria máxima para Java (por defecto: 2G)
+   * memoryMin (opcional): Memoria mínima para Java (por defecto: 512M)
+
+   Ejemplo:
+
+   ```
+   mc-core launch 1.19.2 ./minecraft true 4G 1G
+   ```
+
+   Salida esperada:
+
+   ```
+   [DEBUG] Iniciando Minecraft 1.19.2
+   [DEBUG] Memoria asignada: 1G - 4G
+   [DEBUG] Lanzador iniciado correctamente
+   ```
 
 ---
 

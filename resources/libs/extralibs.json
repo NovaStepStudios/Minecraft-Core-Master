@@ -1,11 +1,11 @@
 [
-  "https://libraries.minecraft.net/org/ow2/asm/asm-all/5.0.3/asm-all-5.0.3.jar",
+  "https://libraries.minecraft.net/org/ow2/asm/asm/4.2/asm-4.2.jar",
   "https://libraries.minecraft.net/io/netty/netty-all/4.0.15.Final/netty-all-4.0.15.Final.jar",
-  "https://libraries.minecraft.net/net/minecraft/launchwrapper/1.12/launchwrapper-1.12.jar",
+  "https://libraries.minecraft.net/net/minecraft/launchwrapper/1.5/launchwrapper-1.5.jar",
   "https://libraries.minecraft.net/lzma/lzma/0.0.1/lzma-0.0.1.jar",
   "https://libraries.minecraft.net/net/sf/jopt-simple/jopt-simple/4.6/jopt-simple-4.6.jar",
 
-  "https://repo1.maven.org/maven2/com/google/guava/guava/17.0/guava-17.0.jar",
+  "https://repo1.maven.org/maven2/com/google/guava/guava/15.0/guava-15.0.jar",
   "https://repo1.maven.org/maven2/net/sf/jopt-simple/jopt-simple/4.6/jopt-simple-4.6.jar",
   "https://repo1.maven.org/maven2/com/google/code/gson/gson/2.2.4/gson-2.2.4.jar",
   "https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.8.1/commons-compress-1.8.1.jar",
