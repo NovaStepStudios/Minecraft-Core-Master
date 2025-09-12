@@ -16,7 +16,7 @@ const { MinecraftLauncher, Mojang } = require('../../dist/index');
 
   // Configuración del launcher
   const launcherOptions = {
-    version: 'neoforge-21.4.152',                // Cambia por la versión que tengas
+    version: '1.12.2',                // Cambia por la versión que tengas
     root: './.minecraft',                                   // Carpeta donde está tu .minecraft
     debug: true,
     memory:{

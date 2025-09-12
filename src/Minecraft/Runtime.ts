@@ -81,6 +81,7 @@ export default class RuntimeDownloader extends EventEmitter {
 		const meta: MojangMeta = (await res.json()) as MojangMeta;
 		const platformData = meta[platform];
 		if (!platformData) throw new Error(`No hay datos para la plataforma ${platform}`);
+		
 		let runtimes = platformData[`java-runtime-${this.variant}`] ?? [];
 		if (!runtimes.length) {
 			const fallback = Object.entries(platformData).find(([_, arr]) => arr && arr.length > 0);
@@ -90,40 +91,47 @@ export default class RuntimeDownloader extends EventEmitter {
 			runtimes = platformData[`java-runtime-${this.variant}`] ?? [];
 			this.emit("warn", `Variant "${this.variant}" no disponible, usando "${fallbackVariant}"`);
 		}
+
 		const selected = runtimes[runtimes.length - 1];
 		if (!selected) throw new Error(`No se pudo seleccionar versión de Java`);
+
 		const manifestRes = await fetch(selected.manifest.url);
 		if (!manifestRes.ok) throw new Error(`No se pudo descargar el manifest: ${manifestRes.status}`);
 		const manifestJson = (await manifestRes.json()) as { files: MojangManifestFiles };
-		const files: JavaFileItem[] = [];
+
 		const manifestEntries = Object.entries(manifestJson.files).filter(([_, info]) => info.downloads);
-		const totalSize = manifestEntries.reduce((acc, [_, info]) => {
-			const dl = info.downloads!.raw || info.downloads!.lzma;
-			return acc + (dl?.size || 0);
-		}, 0);
-		let downloadedSize = 0;
+		const totalFiles = manifestEntries.length;
+		let currentFile = 0;
+
+		const files: JavaFileItem[] = [];
 		for (const [relPath, info] of manifestEntries) {
-            const downloadInfo = info.downloads!.raw || info.downloads!.lzma;
-            if (!downloadInfo?.url) continue;
-            const localPath = path.join(javaDir, relPath.replace(/\//g, path.sep));
-            fs.mkdirSync(path.dirname(localPath), { recursive: true });
-            await fromURL(downloadInfo.url, localPath);
-            downloadedSize += downloadInfo.size || 0;
-            let percent = totalSize ? (downloadedSize / totalSize) * 100 : 0;
-            if (percent > 100) percent = 100;
-            this.emit("progress", percent, totalSize, `Descargando: ${relPath}`);
-            if (info.executable) fs.chmodSync(localPath, 0o777);
-            const fileItem: JavaFileItem = {
-                path: localPath,
-                executable: !!info.executable,
-                type: "Java",
-                url: downloadInfo.url,
-            };
-            if (downloadInfo.sha1) fileItem.sha1 = downloadInfo.sha1;
-            if (downloadInfo.size !== undefined) fileItem.size = downloadInfo.size;
-            files.push(fileItem);
-        }
+			const downloadInfo = info.downloads!.raw || info.downloads!.lzma;
+			if (!downloadInfo?.url) continue;
+
+			const localPath = path.join(javaDir, relPath.replace(/\//g, path.sep));
+			fs.mkdirSync(path.dirname(localPath), { recursive: true });
+
+			await fromURL(downloadInfo.url, localPath);
+
+			if (info.executable) fs.chmodSync(localPath, 0o777);
+
+			const fileItem: JavaFileItem = {
+				path: localPath,
+				executable: !!info.executable,
+				type: "Java",
+				url: downloadInfo.url,
+			};
+			if (downloadInfo.sha1) fileItem.sha1 = downloadInfo.sha1;
+			if (downloadInfo.size !== undefined) fileItem.size = downloadInfo.size;
+			files.push(fileItem);
+
+			currentFile++;
+			const percent = totalFiles ? (currentFile / totalFiles) * 100 : 100;
+			this.emit("progress", { current: currentFile, total: totalFiles, percent, file: relPath });
+		}
+
 		const exePath = path.join(javaDir, os.platform() === "win32" ? "bin/javaw.exe" : "bin/java");
 		return { files, path: exePath };
 	}
+
 }

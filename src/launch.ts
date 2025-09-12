@@ -3,9 +3,9 @@ import path from "path";
 import { spawn, execSync } from "child_process";
 import { EventEmitter } from "events";
 import prompt from "prompt";
-import { VersionHandler, VersionJSON } from "./Minecraft/Handler/Version";
-import { ArgumentBuilder, Version } from "./Minecraft/Handler/Arguments";
-import { ClasspathManager } from "./Minecraft/Handler/Classpath";
+import { VersionHandler, VersionJSON } from "./Minecraft/Version";
+import { ArgumentBuilder, Version } from "./Minecraft/Arguments";
+import { ClasspathManager } from "./Minecraft/Classpath";
 
 export interface LauncherOptions {
   version: string;
@@ -86,26 +86,47 @@ export class MinecraftLauncher extends EventEmitter {
   }
 
   private async getJavaPath(): Promise<string> {
-    let javaExec = resolveJavaPath(this.options.javaPath);
+    const runtimeDir = path.join(this.options.root, "runtime");
 
-    if (!javaExec) {
-      this.emit("warn", "No se encontró Java automáticamente. Solicitando al usuario...");
-      prompt.start();
+    if (fs.existsSync(runtimeDir)) {
+        const runtimeFolders = fs.readdirSync(runtimeDir).filter(f => f.startsWith("jre-"));
+        for (const folder of runtimeFolders) {
+            const binFolder = path.join(runtimeDir, folder, "bin");
+            let javaExe: string;
 
-      const { manualJava } = await prompt.get({
+            if (process.platform === "win32") {
+                const javaw = path.join(binFolder, "javaw.exe");
+                const java = path.join(binFolder, "java.exe");
+                if (fs.existsSync(javaw)) javaExe = javaw;
+                else if (fs.existsSync(java)) javaExe = java;
+                else continue;
+            } else {
+                javaExe = path.join(binFolder, "java");
+                if (!fs.existsSync(javaExe)) continue;
+            }
+
+            const javaPathAbsolute = path.resolve(javaExe);
+            this.emit("info", `Usando Java desde runtime: ${javaPathAbsolute}`);
+            return javaPathAbsolute;
+        }
+    }
+
+    const javaExec = resolveJavaPath(this.options.javaPath);
+    if (javaExec) return path.resolve(javaExec);
+
+    this.emit("warn", "No se encontró Java automáticamente. Solicitando al usuario...");
+    prompt.start();
+    const { manualJava } = await prompt.get({
         name: "manualJava",
         description: "Ruta del ejecutable de Java",
         required: true
-      });
+    });
 
-      if (typeof manualJava === "string" && fs.existsSync(manualJava)) {
-        javaExec = path.normalize(manualJava);
-      } else {
-        throw new Error("La ruta de Java ingresada no es válida.");
-      }
+    if (typeof manualJava === "string" && fs.existsSync(manualJava)) {
+        return path.resolve(manualJava);
     }
 
-    return javaExec;
+    throw new Error("La ruta de Java ingresada no es válida.");
   }
 
   async launch(): Promise<void> {

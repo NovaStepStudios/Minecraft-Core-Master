@@ -221,7 +221,7 @@ const { MinecraftDownloader, Mojang } = require('minecraft-core-master');
 | `root`        | `string`            | Carpeta raíz donde se almacenarán todos los datos de Minecraft.                                       | `"./.minecraft"`                        |
 | `version`     | `string`            | Versión de Minecraft a descargar e instalar.                                                          | `"1.12.2"`, `"1.20.1"`                  |
 | `concurrency` | `boolean \| number` | Controla el modo de descarga: `false` = archivos 1x1, `number` = cantidad de descargas en paralelo.   | `false`, `2`, `5`                       |
-| `installJava` | `boolean \| string` | Si es `false`, no descarga Java. Si es un número o string, descarga esa versión específica de Java.   | `false`, `"17"`, `"22"`                 |
+| `installJava` | `boolean \| string` | Si es `false`, no descarga Java. Si es un número o string, descarga esa versión específica de Java. Si agregas `auto`, se instalara automaticamente la version de java que necesita `x` version del juego   | `false`,`"auto" Default`, `"17"`, `"22"`                 |
 | `variantJava` | `string`            | Variante de Java a instalar.                                                                          | `"release"`, `"snapshot"`, `"beta"`     |
 | `bundle`      | `boolean`           | Si es `true`, descarga e instala todo en un solo paquete (optimizado).                               | `true`, `false`                         |
 
@@ -970,7 +970,7 @@ Ya sea que quieras crear tu propio launcher, integrar cosas con **React/Electron
   <img align="center" width="150px" src="./docs/creator.png">
 </p>
 
-Espero que me sigan, ¡tengo como 500 versiones de MC y mil errores que enfrentar en solitario!  
+Espero que me sigan, ¡tengo como 500 versiones de MC y mil errores que tengo que liviar yo solito >:v!  
 Investigo cómo funciona **X cosa mágica del juego, o funcion**, y luego me rompo la cabeza para  
 meterla en el paquete sin que explote todo. :v  
 

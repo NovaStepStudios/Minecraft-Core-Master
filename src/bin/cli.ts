@@ -68,9 +68,9 @@ switch (command) {
 
   case "launch":
     launch(
-      args[1] || "1.12.2", // version
+      args[1] || "1.12.2",    // version
       args[2] || ".minecraft", // dir
-      args[3] === "false",     // debug
+      args[3] === "true",     // debug
       args[4] || "2G",        // memoryMax
       args[5] || "512M"       // memoryMin
     );

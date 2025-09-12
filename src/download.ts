@@ -26,7 +26,7 @@ interface DownloaderOptions {
   root: string;
   version: VersionInput;
   concurrency?: number | false | undefined;
-  installJava?: JavaOption | undefined;
+  installJava?: JavaOption | "auto" | undefined;
   variantJava?: "release" | "snapshot" | "alpha" | "beta" | undefined;
   bundleEnabled?: boolean;
   bundle?: BundleItem[] | undefined;
@@ -70,7 +70,7 @@ export class MinecraftDownloader extends EventEmitter {
   }
 
   public async start(options: DownloaderOptions) {
-    const { root, version, concurrency = 1, installJava = true, bundle, bundleEnabled = true } = options;
+    const { root, version, concurrency = 1, installJava = "auto", bundle, bundleEnabled = true } = options;
 
     if (!root) throw new Error("Debe especificar la carpeta raíz (root).");
     if (!version) throw new Error("Debe especificar la versión de Minecraft.");
@@ -142,9 +142,13 @@ export class MinecraftDownloader extends EventEmitter {
 
     if (installJava !== false) {
       let javaVersion: string;
-      if (installJava === "auto" || installJava === true) javaVersion = this.getRecommendedJavaVersion(version);
-      else if (typeof installJava === "string") javaVersion = installJava;
-      else javaVersion = this.getRecommendedJavaVersion(version);
+      if (installJava === "auto" || installJava === true) {
+        javaVersion = await this.getRecommendedJavaVersion(version);
+      } else if (typeof installJava === "string") {
+        javaVersion = installJava;
+      } else {
+        javaVersion = await this.getRecommendedJavaVersion(version);
+      }
 
       const userVariant = options.variantJava || "release";
       const variantMap: Record<string, "alpha" | "beta" | "delta" | "gamma" | "gamma-snapshot" | "jre-legacy"> = {
@@ -226,10 +230,28 @@ export class MinecraftDownloader extends EventEmitter {
     });
   }
 
-  private getRecommendedJavaVersion(version: VersionInput): string {
-    const ver = typeof version === "string" ? version : version.id;
-    if (/^1\.1[7-9]|^1\.20/.test(ver)) return "17";
-    return "22";
+  private async getRecommendedJavaVersion(version: VersionInput): Promise<string> {
+    const verId = typeof version === "string" ? version : version.id;
+
+    try {
+      const manifestUrl = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
+      const respManifest = await fetch(manifestUrl);
+      if (!respManifest.ok) throw new Error(`Error descargando version_manifest_v2.json: ${respManifest.status}`);
+      const manifest = await respManifest.json();
+      const versionInfo = manifest.versions.find((v: any) => v.id === verId);
+      if (!versionInfo) throw new Error(`Versión ${verId} no encontrada en manifest`);
+      const respVersionJson = await fetch(versionInfo.url);
+      if (!respVersionJson.ok) throw new Error(`Error descargando ${versionInfo.url}: ${respVersionJson.status}`);
+      const versionJson = await respVersionJson.json();
+      if (versionJson.javaVersion?.majorVersion) {
+        return String(versionJson.javaVersion.majorVersion);
+      }
+      if (/^1\.1[7-9]|^1\.20/.test(verId)) return "17";
+      return "22";
+    } catch (err: any) {
+      console.warn(`[Java Auto] No se pudo obtener la versión de Java de Mojang: ${err.message}`);
+      return "22";
+    }
   }
 
   public stop() {

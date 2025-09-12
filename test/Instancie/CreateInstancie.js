@@ -21,7 +21,7 @@ const { MinecraftDownloader, Mojang } = require('../../dist/index');
     version: "1.12.2",
     installJava: false,
     variantJava: "release",
-    concurrency: false,
+    concurrency: 2,
 
     manifest: {
       name: "Mi Instancia",

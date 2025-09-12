@@ -1,6 +1,6 @@
 {
   "name": "minecraft-core-master",
-  "version": "7.3.2",
+  "version": "7.4.3",
   "description": "Minecraft-Core-Master en TypeScript: descarga, instala y lanza versiones Vanilla y modloaders (Forge, NeoForge, Fabric, Quilt, LegacyFabric). Compatible con modpacks de Modrinth (.mrpack) y con gestión completa de librerías, assets y nativos.",
   "type": "commonjs",
   "main": "./dist/index.js",
